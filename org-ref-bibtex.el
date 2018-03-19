@@ -62,6 +62,11 @@
 
 (require 'org-ref-citeproc)
 (require 'doi-utils)
+(require 'org-ref-arxiv)
+(require 'org-ref-pubmed)
+(require 'org-ref-scopus)
+(require 'org-ref-worldcat)
+(require 'org-ref-wos)
 
 (defvar org-ref-pdf-directory)
 (defvar org-ref-notes-directory)
