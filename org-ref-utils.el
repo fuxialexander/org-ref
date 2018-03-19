@@ -22,7 +22,7 @@
 
 ;;
 (require 'org)
-(require 'org-ref-pdf)  		; for pdftotext-executable
+;; (require 'org-ref-pdf)  		; for pdftotext-executable
 
 (defcustom org-ref-bib-html "<h1 class='org-ref-bib-h1'>Bibliography</h1>\n"
   "HTML header to use for bibliography in HTML export."
