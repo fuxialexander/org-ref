@@ -193,7 +193,10 @@ must return a pdf-url, or nil.")
   (when (string-match "^http://www.nature.com" *doi-utils-redirect*)
     (let ((result *doi-utils-redirect*))
       (setq result (replace-regexp-in-string "/full/" "/pdf/" result))
-      (replace-regexp-in-string "\.html$" "\.pdf" result))))
+      (replace-regexp-in-string "\.html$" "\.pdf" result)
+      (if (string-match "\.pdf" result)
+          result
+        (concat result ".pdf")))))
 
 
 ;;** Elsevier/ScienceDirect
