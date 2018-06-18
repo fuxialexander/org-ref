@@ -465,7 +465,7 @@ users may be interested in adding themselves."
 
 
 (defcustom org-ref-bibtex-sort-order
-  '(("article"  . ("author" "title" "journal" "volume" "number" "pages" "year" "doi" "url"))
+  '(("article"  . ("author" "title" "journaltitle" "journal" "volume" "number" "pages" "year" "doi" "url"))
     ("inproceedings" . ("author" "title" "booktitle" "year" "volume" "number" "pages" "doi" "url"))
     ("book" . ("author" "title" "year" "publisher" "url")))
   "A-list of bibtex entry fields and the order to sort an entry with.
@@ -2099,6 +2099,7 @@ creates a cite link."
        :title (or (cdr (assoc "title" entry)) "[no title]")
        :booktitle (or (cdr (assoc "booktitle" entry)) "[no booktitle]")
        :journal (or (cdr (assoc "journal" entry)) "[no journal]")
+       :journaltitle (or (cdr (assoc "journaltitle" entry)) "[no journal]")
        :publisher (or (cdr (assoc "publisher" entry)) "[no publisher]")
        :pages (or (cdr (assoc "pages" entry)) "[no pages]")
        :url (or (cdr (assoc "url" entry)) "[no url]")
@@ -3004,7 +3005,7 @@ If not, issue a warning."
     (save-excursion
       (bibtex-beginning-of-entry)
       (let* ((entry (bibtex-parse-entry t))
-             (journal (reftex-get-bib-field "journal" entry)))
+             (journal (or (reftex-get-bib-field "journaltitle" entry) (reftex-get-bib-field "journal" entry))))
         (when (null journal)
           (error "Unable to get journal for this entry."))
         (unless (member journal (-flatten org-ref-bibtex-journal-abbreviations))

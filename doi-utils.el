@@ -712,6 +712,7 @@ checked."
 (defun doi-utils-get-json-metadata (doi)
   "Try to get json metadata for DOI.  Open the DOI in a browser if we do not get it."
   (let ((url-request-method "GET")
+        (url-proxy-services nil)
         (url-mime-accept-string "application/citeproc+json")
         (json-object-type 'plist)
         (json-data))
@@ -757,6 +758,7 @@ checked."
       (title      (plist-get results :title))
       (subtitle   (plist-get results :subtitle))
       (journal    (plist-get results :container-title))
+      (journaltitle    (plist-get results :container-title))
       (series     (plist-get results :container-title))
       (publisher  (plist-get results :publisher))
       (volume     (plist-get results :volume))
@@ -828,7 +830,7 @@ MATCHING-TYPES."
          doi-utils-bibtex-type-generators))
 
 (doi-utils-def-bibtex-type article ("journal-article" "article-journal")
-                           author title journal year volume number pages doi url)
+                           author title journal journaltitle year volume number pages doi url)
 
 (doi-utils-def-bibtex-type inproceedings ("proceedings-article" "paper-conference")
                            author title booktitle year month pages doi url)
@@ -862,6 +864,9 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
   (insert (doi-utils-doi-to-bibtex-string doi))
   (backward-char)
   ;; set date added for the record
+  (bibtex-set-field
+     "journaltitle"
+     (bibtex-autokey-get-field "journal"))
   (when doi-utils-timestamp-format-function
     (bibtex-set-field doi-utils-timestamp-field
 		      (funcall doi-utils-timestamp-format-function)))
@@ -1061,6 +1066,7 @@ Every field will be updated, so previous change will be lost."
                   (plist-get results :author) " and "))
          (title (plist-get results :title))
          (journal (plist-get results :container-title))
+         (journal-title (plist-get results :container-title))
          (year (format "%s"
                        (elt
                         (elt
@@ -1075,15 +1081,26 @@ Every field will be updated, so previous change will be lost."
 
     ;; map the json fields to bibtex fields. The code each field is mapped to is
     ;; evaluated.
-    (setq mapping '((:author . (bibtex-set-field "author" author))
-                    (:title . (bibtex-set-field "title" title))
-                    (:container-title . (bibtex-set-field "journal" journal))
-                    (:issued . (bibtex-set-field "year" year))
-                    (:volume . (bibtex-set-field "volume" volume))
-                    (:issue . (bibtex-set-field "number" number))
-                    (:page . (bibtex-set-field "pages" pages))
-                    (:DOI . (bibtex-set-field "doi" doi))
-                    (:URL . (bibtex-set-field "url" url))))
+    (cond ((eq bibtex-dialect 'biblatex)
+           (setq mapping '((:author . (bibtex-set-field "author" author))
+                           (:title . (bibtex-set-field "title" title))
+                           (:container-title . (bibtex-set-field "journaltitle" journal))
+                           (:issued . (bibtex-set-field "year" year))
+                           (:volume . (bibtex-set-field "volume" volume))
+                           (:issue . (bibtex-set-field "number" number))
+                           (:page . (bibtex-set-field "pages" pages))
+                           (:DOI . (bibtex-set-field "doi" doi))
+                           (:URL . (bibtex-set-field "url" url)))))
+          ((eq bibtex-dialect 'BibTex)
+           (setq mapping '((:author . (bibtex-set-field "author" author))
+                           (:title . (bibtex-set-field "title" title))
+                           (:container-title . (bibtex-set-field "journal" journal))
+                           (:issued . (bibtex-set-field "year" year))
+                           (:volume . (bibtex-set-field "volume" volume))
+                           (:issue . (bibtex-set-field "number" number))
+                           (:page . (bibtex-set-field "pages" pages))
+                           (:DOI . (bibtex-set-field "doi" doi))
+                           (:URL . (bibtex-set-field "url" url))))))
 
     ;; now we have code to run for each entry. we map over them and evaluate the code
     (mapc
