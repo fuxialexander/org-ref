@@ -578,29 +578,30 @@ REDIRECT-URL is where the pdf url will be in."
     (when (url-http-file-exists-p pdf)
       pdf)))
 
-(if (eq system-type 'darwin)
-    (defun generic-as-get-pdf-url (*doi-utils-redirect*)
-      "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-      (do-applescript
-       (concat
-        "
+(if (display-graphic-p)
+    (if (eq system-type 'darwin)
+        (defun generic-as-get-pdf-url (*doi-utils-redirect*)
+          "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+          (do-applescript
+           (concat
+            "
 tell application \"Google Chrome\"
 activate
 set myTab to make new tab at end of tabs of window 1
 set URL of myTab to \""
-        *doi-utils-redirect*
-        "\"
+            *doi-utils-redirect*
+            "\"
 end tell
 "))
-      (do-applescript
-       "
+          (do-applescript
+           "
 set question to display dialog \"Locate PDF URL\" buttons {\"OK\"} default button 1
 tell application \"Google Chrome\"
     if button returned of question is \"OK\" then
         return URL of active tab of front window
     end if
 end tell
-")))
+"))))
 
 ;;** IEEE
 ;; 10.1109/re.2014.6912247
@@ -1362,6 +1363,9 @@ Data is retrieved from the doi in the entry."
         ()
         (setq load-path ',load-path)
         (let ((noninteractive))
+          (require 'org-ref)
+          (require 'org-ref-biorxiv)
+          (require 'org-ref-elfeed)
           (require 'doi-utils))
         ,(async-inject-variables
           "\\`\\(org-ref\\)-")
