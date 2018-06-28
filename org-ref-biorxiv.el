@@ -209,6 +209,7 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
         ()
         (setq load-path ',load-path)
         (let ((noninteractive))
+          (require 'org-ref)
           (require 'org-ref-biorxiv))
         ,(async-inject-variables
           "\\`\\(org-ref\\)-")
