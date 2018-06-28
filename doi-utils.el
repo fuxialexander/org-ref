@@ -53,10 +53,7 @@
 (require 'bibtex)
 (require 'dash)
 (require 'json)
-(require 'org)                          ; org-add-link-type
-(require 'org-bibtex)                   ; org-bibtex-yank
 (require 'url-http)
-(require 'org-ref-utils)
 
 ;;* Customization
 (defgroup doi-utils nil
@@ -186,19 +183,71 @@ must return a pdf-url, or nil.")
   (when (string-match "^http://www.sciencemag.org" *doi-utils-redirect*)
     (concat *doi-utils-redirect* ".full.pdf")))
 
+;; ** BMC
+(defun bmc-pdf-url (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (when (string-match
+         "biomedcentral.com"
+         *doi-utils-redirect*)
+    (let ((url (downcase *doi-utils-redirect*)))
+      (setq url
+            (replace-regexp-in-string
+             "articles"
+             "track/pdf"
+             url))
+      url)))
+
+;; ** OUP
+(defun oup-pdf-url (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (while *doi-utils-waiting*
+    (sleep-for 0.1))
+  (when (string-match
+         "academic.oup.com"
+         *doi-utils-redirect*)
+    (doi-utils-get-oup-pdf-url
+     *doi-utils-redirect*)
+    *doi-utils-pdf-url*))
+(defun doi-utils-get-oup-pdf-url (redirect-url)
+  "Science direct hides the pdf url in html.  We get it out here.
+REDIRECT-URL is where the pdf url will be in."
+  (setq *doi-utils-waiting* t)
+  (url-retrieve
+   redirect-url
+   (lambda (status)
+     (goto-char (point-min))
+     (re-search-forward
+      "citation_pdf_url\" content=\"\\([^\"]*\\)\""
+      nil
+      t)
+     (setq *doi-utils-pdf-url*
+           (match-string 1)
+           *doi-utils-waiting*
+           nil)))
+  (while *doi-utils-waiting*
+    (sleep-for 0.1))
+  *doi-utils-pdf-url*)
 
 ;;** Nature
 
+;; (defun nature-pdf-url (*doi-utils-redirect*)
+;;   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+;;   (when (string-match "^http://www.nature.com" *doi-utils-redirect*)
+;;     (let ((result *doi-utils-redirect*))
+;;       (setq result (replace-regexp-in-string "/full/" "/pdf/" result))
+;;       (replace-regexp-in-string "\.html$" "\.pdf" result)
+;;       (if (string-match "\.pdf" result)
+;;           result
+;;         (concat result ".pdf")))))
+
 (defun nature-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.nature.com" *doi-utils-redirect*)
+  (when (string-match
+         "^http://www.nature.com"
+         *doi-utils-redirect*)
     (let ((result *doi-utils-redirect*))
-      (setq result (replace-regexp-in-string "/full/" "/pdf/" result))
-      (replace-regexp-in-string "\.html$" "\.pdf" result)
-      (if (string-match "\.pdf" result)
-          result
-        (concat result ".pdf")))))
-
+      ;; (setq result (replace-regexp-in-string "/full/" "/pdf/" result))
+      (concat result "\.pdf"))))
 
 ;;** Elsevier/ScienceDirect
 ;; You cannot compute these pdf links; they are embedded in the redirected pages.
@@ -341,6 +390,28 @@ Argument REDIRECT-URL URL you are redirected to."
       url)))
 
 ;;** Science Direct
+;; (defun doi-utils-get-science-direct-pdf-url (redirect-url)
+;;   "Science direct hides the pdf url in html.  We get it out here.
+;; REDIRECT-URL is where the pdf url will be in."
+;;   (setq *doi-utils-waiting* t)
+;;   (url-retrieve
+;;    redirect-url
+;;    (lambda (status)
+;;      (goto-char (point-min))
+;;      (re-search-forward "pdf_url\" content=\"\\([^\"]*\\)\"" nil t) ; modified the search string to reflect updated science direct
+;;      (setq *doi-utils-pdf-url* (match-string 1)
+;; 	   *doi-utils-waiting* nil)))
+;;   (while *doi-utils-waiting* (sleep-for 0.1))
+;;   *doi-utils-pdf-url*)
+
+
+;; (defun science-direct-pdf-url (*doi-utils-redirect*)
+;;   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+;;   (when (string-match "^http://www.sciencedirect.com" *doi-utils-redirect*)
+;;     (doi-utils-get-science-direct-pdf-url *doi-utils-redirect*)
+;;     *doi-utils-pdf-url*))
+
+
 (defun doi-utils-get-science-direct-pdf-url (redirect-url)
   "Science direct hides the pdf url in html.  We get it out here.
 REDIRECT-URL is where the pdf url will be in."
@@ -349,18 +420,33 @@ REDIRECT-URL is where the pdf url will be in."
    redirect-url
    (lambda (status)
      (goto-char (point-min))
-     (re-search-forward "pdf_url\" content=\"\\([^\"]*\\)\"" nil t) ; modified the search string to reflect updated science direct
-     (setq *doi-utils-pdf-url* (match-string 1)
-	   *doi-utils-waiting* nil)))
-  (while *doi-utils-waiting* (sleep-for 0.1))
+     (re-search-forward
+      "citation_pdf_url\" content=\"[^\"]*pii/\\([^\"]*\\)/pdfft[^\"]*pid=\\([^\"]*pdf\\)\""
+      nil
+      t)
+                                        ; modified the search string to reflect updated science direct
+     ;; https://www.sciencedirect.com/science/article/pii/S009286741830446X/pdfft?md5=76e9acc0d4dcfb5a27008e99f414b47c&pid=1-s2.0-S009286741830446X-main.pdf
+     ;; https://www.sciencedirect.com/sdfe/pdf/download/file/pii/S009286741830446X/1-s2.0-S009286741830446X-main.pdf
+     (setq *doi-utils-pdf-url*
+           (format
+            "https://www.sciencedirect.com/sdfe/pdf/download/file/pii/%s/%s"
+            (match-string 1)
+            (match-string 2))
+           *doi-utils-waiting*
+           nil)))
+  (while *doi-utils-waiting*
+    (sleep-for 0.1))
   *doi-utils-pdf-url*)
-
 
 (defun science-direct-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.sciencedirect.com" *doi-utils-redirect*)
-    (doi-utils-get-science-direct-pdf-url *doi-utils-redirect*)
+  (when (string-match
+         "^http://www.sciencedirect.com"
+         *doi-utils-redirect*)
+    (doi-utils-get-science-direct-pdf-url
+     *doi-utils-redirect*)
     *doi-utils-pdf-url*))
+
 
 ;; sometimes I get
 ;; http://linkinghub.elsevier.com/retrieve/pii/S0927025609004558
@@ -369,7 +455,7 @@ REDIRECT-URL is where the pdf url will be in."
 (defun linkinghub-elsevier-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
   (when (string-match
-	 "^https://linkinghub.elsevier.com/retrieve" *doi-utils-redirect*)
+	     "^https://linkinghub.elsevier.com/retrieve" *doi-utils-redirect*)
     (doi-utils-get-science-direct-pdf-url
      (replace-regexp-in-string
       ;; change URL to science direct and use function to get pdf URL
@@ -491,6 +577,30 @@ REDIRECT-URL is where the pdf url will be in."
   (let ((pdf (concat *doi-utils-redirect* ".full.pdf")))
     (when (url-http-file-exists-p pdf)
       pdf)))
+
+(if (eq system-type 'darwin)
+    (defun generic-as-get-pdf-url (*doi-utils-redirect*)
+      "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+      (do-applescript
+       (concat
+        "
+tell application \"Google Chrome\"
+activate
+set myTab to make new tab at end of tabs of window 1
+set URL of myTab to \""
+        *doi-utils-redirect*
+        "\"
+end tell
+"))
+      (do-applescript
+       "
+set question to display dialog \"Locate PDF URL\" buttons {\"OK\"} default button 1
+tell application \"Google Chrome\"
+    if button returned of question is \"OK\" then
+        return URL of active tab of front window
+    end if
+end tell
+")))
 
 ;;** IEEE
 ;; 10.1109/re.2014.6912247
@@ -692,7 +802,8 @@ checked."
               (message "%s saved" pdf-file)
             (delete-file pdf-file)
             (message "No pdf was downloaded.")
-            (browse-url pdf-url)))
+            ;; (browse-url pdf-url)
+            ))
 	 ((equal arg '(4))
 	  (copy-file (expand-file-name (read-file-name "Pdf file: " nil nil t))
 		     pdf-file))
@@ -712,11 +823,12 @@ checked."
 
 (defun doi-utils-get-json-metadata (doi)
   "Try to get json metadata for DOI.  Open the DOI in a browser if we do not get it."
-  (let ((url-request-method "GET")
-        (url-proxy-services nil)
-        (url-mime-accept-string "application/citeproc+json")
-        (json-object-type 'plist)
-        (json-data))
+  (let ((json-object-type 'plist)
+        json-data)
+    (with-eval-after-load 'url
+      (setq url-request-method "GET"
+            url-proxy-services nil
+            url-mime-accept-string "application/citeproc+json"))
     (with-current-buffer
         (url-retrieve-synchronously
          (concat "http://dx.doi.org/" doi))
@@ -994,17 +1106,6 @@ Argument BIBFILE the bibliography to use."
 (defalias 'doi-add-bibtex-entry 'doi-utils-add-bibtex-entry-from-doi
   "Alias function for convenience.")
 
-;;;###autoload
-(defun doi-utils-doi-to-org-bibtex (doi)
-  "Convert a DOI to an ‘org-bibtex’ form and insert it at point."
-  (interactive "sDOI: ")
-  (with-temp-buffer
-    (insert (doi-utils-doi-to-bibtex-string doi))
-    (bibtex-clean-entry)
-    (kill-region (point-min) (point-max)))
-  (org-bibtex-yank)
-  (org-metaright)
-  (org-metaright))
 
 ;;* Updating bibtex entries
 
@@ -1138,387 +1239,145 @@ Data is retrieved from the doi in the entry."
       (message "%s not supported yet." field)))))
 
 
-
-;;* DOI functions for WOS
-
-;; I came across this API http://wokinfo.com/media/pdf/OpenURL-guide.pdf to make
-;; links to the things I am interested in here. Based on that document, here are
-;; three links based on a doi:10.1021/jp047349j that take you to different Web
-;; Of Science (WOS) pages.
-
-
-;; 1. go to article in WOS: http://ws.isiknowledge.com/cps/openurl/service?url_ver=Z39.88-2004&rft_id=info:doi/10.1021/jp047349j
-;; 2. citing articles: http://ws.isiknowledge.com/cps/openurl/service?url_ver=Z39.88-2004&rft_id=info%3Adoi%2F10.1021/jp047349j&svc_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Asch_svc&svc.citing=yes
-;; 3. related articles: http://ws.isiknowledge.com/cps/openurl/service?url_ver=Z39.88-2004&rft_id=info%3Adoi%2F10.1021/jp047349j&svc_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Asch_svc&svc.related=yes
-
-;; These are pretty easy to construct, so we can write functions that will
-;; create them and open the url in our browser. There are some other options
-;; that could be considered, but since we usually have a doi, it seems like the
-;; best way to go for creating the links. Here are the functions.
-
+;; * async
 ;;;###autoload
-(defun doi-utils-wos (doi)
-  "Open Web of Science entry for DOI."
-  (interactive "sDOI: ")
-  (browse-url
-   (format
-    "http://ws.isiknowledge.com/cps/openurl/service?url_ver=Z39.88-2004&rft_id=info:doi/%s" doi)))
-
-;;;###autoload
-(defun doi-utils-wos-citing (doi)
-  "Open Web of Science citing articles entry for DOI.
-May be empty if none are found."
-  (interactive "sDOI: ")
-  (browse-url
-   (concat
-    "http://ws.isiknowledge.com/cps/openurl/service?url_ver=Z39.88-2004&rft_id=info%3Adoi%2F"
-    doi
-    "&svc_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Asch_svc&svc.citing=yes")))
-
-;;;###autoload
-(defun doi-utils-wos-related (doi)
-  "Open Web of Science related articles page for DOI."
-  (interactive "sDOI: ")
-  (browse-url
-   (concat "http://ws.isiknowledge.com/cps/openurl/service?url_ver=Z39.88-2004&rft_id=info%3Adoi%2F"
-           doi
-           "&svc_val_fmt=info%3Aofi%2Ffmt%3Akev%3Amtx%3Asch_svc&svc.related=yes")))
-
-
-
-
-;;* A new doi link for org-mode
-;; The idea is to add a menu to the doi link, so rather than just clicking to open the article, you can do other things.
-;; 1. open doi
-;; 2. open in wos
-;; 3. open citing articles
-;; 4. open related articles
-;; 5. open bibtex entry
-;; 6. get bibtex entry
-
-
-;;;###autoload
-(defun doi-utils-open (doi)
-  "Open DOI in browser."
-  (interactive "sDOI: ")
-  (browse-url (concat doi-utils-dx-doi-org-url doi)))
-
-
-;;;###autoload
-(defun doi-utils-open-bibtex (doi)
-  "Search through variable `reftex-default-bibliography' for DOI."
-  (interactive "sDOI: ")
-  (catch 'file
-    (dolist (f reftex-default-bibliography)
-      (find-file f)
-      (when (search-forward doi (point-max) t)
-        (bibtex-beginning-of-entry)
-        (throw 'file t)))))
-
-
-;;;###autoload
-(defun doi-utils-crossref (doi)
-  "Search DOI in CrossRef."
-  (interactive "sDOI: ")
-  (browse-url
-   (format
-    "http://search.crossref.org/?q=%s" doi)))
-
-
-;;;###autoload
-(defun doi-utils-google-scholar (doi)
-  "Google scholar the DOI."
-  (interactive "sDOI: ")
-  (browse-url
-   (format
-    "http://scholar.google.com/scholar?q=%s" doi)))
-
-
-;;;###autoload
-(defun doi-utils-pubmed (doi)
-  "Search Pubmed for the DOI."
-  (interactive "sDOI: ")
-  (browse-url
-   (format
-    "http://www.ncbi.nlm.nih.gov/pubmed/?term=%s"
-    (url-hexify-string doi))))
-
-
-(defvar doi-link-menu-funcs '()
-  "Functions to run in doi menu.
-Each entry is a list of (key menu-name function).  The function
-must take one argument, the doi.")
-
-(setq doi-link-menu-funcs
-      '(("o" "pen" doi-utils-open)
-        ("w" "os" doi-utils-wos)
-        ("c" "iting articles" doi-utils-wos-citing)
-        ("r" "elated articles" doi-utils-wos-related)
-        ("s" "Google Scholar" doi-utils-google-scholar)
-        ("f" "CrossRef" doi-utils-crossref)
-        ("p" "ubmed" doi-utils-pubmed)
-        ("b" "open in bibtex" doi-utils-open-bibtex)
-        ("g" "et bibtex entry" doi-utils-add-bibtex-entry-from-doi)))
-
-
-;;;###autoload
-(defun doi-link-menu (link-string)
-  "Generate the link menu message, get choice and execute it.
-Options are stored in `doi-link-menu-funcs'.
-Argument LINK-STRING Passed in on link click."
-  (interactive)
-  (message
-   (concat
-    (mapconcat
-     (lambda (tup)
-       (concat "[" (elt tup 0) "]"
-               (elt tup 1) " "))
-     doi-link-menu-funcs "") ": "))
-  (let* ((input (read-char-exclusive))
-         (choice (assoc
-                  (char-to-string input) doi-link-menu-funcs)))
-    (when choice
-      (funcall
-       (elt
-        choice
-        2)
-       link-string))))
-
-(org-ref-link-set-parameters "doi"
-  :follow #'doi-link-menu
-  :export (lambda (doi desc format)
-            (cond
-             ((eq format 'html)
-              (format "<a href=\"%s%s\">%s</a>"
-                      doi-utils-dx-doi-org-url
-                      doi
-                      (or desc (concat "doi:" doi))))
-             ((eq format 'latex)
-              (format "\\href{%s%s}{%s}"
-                      doi-utils-dx-doi-org-url
-                      doi
-                      (or desc (concat "doi:" doi)))))))
-
-;;* Getting a doi for a bibtex entry missing one
-
-;; Some bibtex entries do not have a DOI, maybe because they were entered by
-;; hand, or copied from a source that did not have it available. Here we develop
-;; some functions to help you find the DOI using Crossref.
-
-;; Here is our example bibtex entry.
-;; #+BEGIN_SRC bibtex
-;; @article{deml-2014-oxide,
-;;   author =	 {Ann M. Deml and Vladan Stevanovi{\'c} and
-;;                   Christopher L. Muhich and Charles B. Musgrave and
-;;                   Ryan O'Hayre},
-;;   title =	 {Oxide Enthalpy of Formation and Band Gap Energy As
-;;                   Accurate Descriptors of Oxygen Vacancy Formation
-;;                   Energetics},
-;;   journal =	 {Energy Environ. Sci.},
-;;   volume =	 7,
-;;   number =	 6,
-;;   pages =	 1996,
-;;   year =	 2014,
-;;   doi =		 {10.1039/c3ee43874k,
-;;   url =		 {http://dx.doi.org/10.1039/c3ee43874k}},
-
-;; }
-
-
-;; The idea is to query Crossref in a way that is likely to give us a hit
-;; relevant to the entry.
-
-;; According to http://search.crossref.org/help/api we can send a query with a
-;; free form citation that may give us something back. We do this to get a list
-;; of candidates, and run a helm command to get the doi.
-
-
-;;;###autoload
-(defun doi-utils-crossref-citation-query ()
-  "Query Crossref with the title of the bibtex entry at point.
-Get a list of possible matches.  This opens a helm buffer to
-select an entry.  The default action inserts a doi and url field
-in the bibtex entry at point.  The second action opens the doi
-url.  If there is already a doi field, the function raises an
-error."
-  (interactive)
-  (bibtex-beginning-of-entry)
-  (let* ((entry (bibtex-parse-entry))
-	 (raw-json-string)
-         (json-string)
-         (json-data)
-         (doi))
-    (unless (string= ""(reftex-get-bib-field "doi" entry))
-      (error "Entry already has a doi field"))
-
-    (with-current-buffer
-        (url-retrieve-synchronously
-         (concat
-          "http://search.crossref.org/dois?q="
-          (url-hexify-string (org-ref-bib-citation))))
-      (save-excursion
-      	(goto-char (point-min))
-      	(while (re-search-forward "<i>\\|</i>" nil t)
-      	  (replace-match ""))
-	(goto-char (point-min))
-	(while (re-search-forward "&amp;" nil t)
-	  (replace-match "&"))
-      	(goto-char (point-min))
-      	(while (re-search-forward "&quot;" nil t)
-      	  (replace-match "\\\"" nil t)))
-      (setq raw-json-string (buffer-substring url-http-end-of-headers (point-max)))
-      ;; decode json string
-      (setq json-string (decode-coding-string (string-make-unibyte raw-json-string) 'utf-8))
-      (setq json-data (json-read-from-string json-string)))
-
-    (let* ((name (format "Crossref hits for %s" (org-ref-bib-citation)))
-           (helm-candidates (mapcar (lambda (x)
-                                      (cons
-                                       (concat
-                                        (cdr (assoc 'fullCitation x)))
-                                       (cdr (assoc 'doi x))))
-                                    json-data))
-
-           (source `((name . ,name)
-                     (candidates . ,helm-candidates)
-                     ;; just return the candidate
-                     (action . (("Insert doi and url field" . (lambda (doi)
-                                                                (bibtex-make-field "doi" t)
-                                                                (backward-char)
-                                                                ;; crossref returns doi url, but I prefer only a doi for the doi field
-                                                                (insert (replace-regexp-in-string "^https?://\\(dx.\\)?doi.org/" "" doi))
-                                                                (when (string= ""(reftex-get-bib-field "url" entry))
-                                                                  (bibtex-make-field "url" t)
-                                                                  (backward-char)
-                                                                  (insert doi))))
-                                ("Open url" . (lambda (doi)
-                                                (browse-url doi))))))))
-      (helm :sources source
-	    :buffer "*doi utils*"))))
-
-
-
-;;* Debugging a DOI
-
-;; I wrote this function to help debug a DOI. This function generates an
-;; org-buffer with the doi, gets the json metadata, shows the bibtex entry, and
-;; the pdf link for it.
-(defun doi-utils-get-json (doi)
-  "Return json data as a string for DOI."
-  (let ((url-request-method "GET")
-        (url-mime-accept-string "application/citeproc+json")
-        (json-data))
-    (with-current-buffer
-        (url-retrieve-synchronously
-         (concat doi-utils-dx-doi-org-url doi))
-      (setq json-data (buffer-substring url-http-end-of-headers (point-max)))
-      (if (string-match "Resource not found" json-data)
-          (progn
-            (browse-url (concat doi-utils-dx-doi-org-url doi))
-            (error "Resource not found.  Opening website"))
-	json-data))))
-
-
-;;;###autoload
-(defun doi-utils-debug (doi)
-  "Generate an org-buffer showing data about DOI."
-  (interactive "sDOI: ")
-  (switch-to-buffer "*debug-doi*")
-  (erase-buffer)
-  (org-mode)
-  (insert (concat "doi:" doi) "\n\n")
-  (insert "* JSON
-"
-	  (let ((url-request-method "GET")
-		(url-mime-accept-string "application/citeproc+json"))
-	    (pp
-	     (json-read-from-string (with-current-buffer
-					(url-retrieve-synchronously
-					 (concat doi-utils-dx-doi-org-url doi))
-				      (buffer-substring url-http-end-of-headers (point-max))))))
-	  "\n\n")
-  (goto-char (point-min)))
-
-;;* Adding a bibtex entry from a crossref query
-
-;; The idea here is to perform a query on Crossref, get a helm buffer of
-;; candidates, and select the entry(ies) you want to add to your bibtex file.
-;; You can select a region, e.g. a free form citation, or set of words, or you
-;; can type the query in by hand.
-
-;;;###autoload
-(defun doi-utils-add-entry-from-crossref-query (query bibtex-file)
-  "Search Crossref with QUERY and use helm to select an entry to add to BIBTEX-FILE."
+(defun org-ref-doi-add-async (doi &optional bibfile)
   (interactive (list
                 (read-string
-                 "Query: "
+                 "DOI: "
                  ;; now set initial input
-                 (cond
-                  ;; If region is active assume we want it
-                  ((region-active-p)
+                 (cond ;; If region is active and it starts like a doi we want it.
+                  ((and (region-active-p)
+                        (s-match
+                         "^10"
+                         (buffer-substring
+                          (region-beginning)
+                          (region-end))))
+                   (buffer-substring
+                    (region-beginning)
+                    (region-end)))
+                  ((and (region-active-p)
+                        (s-match
+                         "^http://dx\\.doi\\.org/"
+                         (buffer-substring
+                          (region-beginning)
+                          (region-end))))
                    (replace-regexp-in-string
-                    "\n" " "
-                    (buffer-substring (region-beginning) (region-end))))
-                  ;; type or paste it in
-                  (t
-                   nil)))
-                (completing-read
-                 "Bibfile: "
-                 (append (f-entries "." (lambda (f) (f-ext? f "bib")))
-                         org-ref-default-bibliography))))
-  (let* ((raw-json-string)
-	 (json-string)
-	 (json-data)
-	 (doi))
-
-    (with-current-buffer
-	(url-retrieve-synchronously
-	 (concat
-	  "http://search.crossref.org/dois?q="
-	  (url-hexify-string query)))
-      ;; replace html entities
-      (save-excursion
-      	(goto-char (point-min))
-      	(while (re-search-forward "<i>\\|</i>" nil t)
-      	  (replace-match ""))
-	(goto-char (point-min))
-	(while (re-search-forward "&amp;" nil t)
-	  (replace-match "&"))
-      	(goto-char (point-min))
-      	(while (re-search-forward "&quot;" nil t)
-      	  (replace-match "\\\"" nil t)))
-      (setq raw-json-string (buffer-substring url-http-end-of-headers (point-max)))
-      ;; decode json string
-      (setq json-string (decode-coding-string (string-make-unibyte raw-json-string) 'utf-8))
-      (setq json-data (json-read-from-string json-string)))
-
-    (let* ((name (format "Crossref hits for %s"
-			 ;; remove carriage returns. they cause problems in helm.
-			 (replace-regexp-in-string "\n" " " query)))
-	   (helm-candidates (mapcar (lambda (x)
-				      (cons
-				       (concat
-					(cdr (assoc 'fullCitation x)))
-				       (cdr (assoc 'doi x))))
-				    json-data))
-	   (source `((name . ,name)
-		     (candidates . ,helm-candidates)
-		     ;; just return the candidate
-		     (action . (("Insert bibtex entry" .  (lambda (doi)
-							    (with-current-buffer (find-file-noselect bibtex-file)
-							      (cl-loop for doi in (helm-marked-candidates)
-								       do
-								       (doi-utils-add-bibtex-entry-from-doi
-									(replace-regexp-in-string
-									 "^https?://\\(dx.\\)?doi.org/" "" doi)
-									,bibtex-file)))))
-				("Open url" . (lambda (doi)
-						(browse-url doi))))))))
-      (helm :sources source
-	    :buffer "*doi utils*"))))
-
-(defalias 'crossref-add-bibtex-entry 'doi-utils-add-entry-from-crossref-query
-  "Alias function for convenience.")
+                    "^http://dx\\.doi\\.org/"
+                    ""
+                    (buffer-substring
+                     (region-beginning)
+                     (region-end))))
+                  ((and (region-active-p)
+                        (s-match
+                         "^https://dx\\.doi\\.org/"
+                         (buffer-substring
+                          (region-beginning)
+                          (region-end))))
+                   (replace-regexp-in-string
+                    "^https://dx\\.doi\\.org/"
+                    ""
+                    (buffer-substring
+                     (region-beginning)
+                     (region-end))))
+                  ((and (region-active-p)
+                        (s-match
+                         (regexp-quote
+                          doi-utils-dx-doi-org-url)
+                         (buffer-substring
+                          (region-beginning)
+                          (region-end))))
+                   (replace-regexp-in-string
+                    (regexp-quote
+                     doi-utils-dx-doi-org-url)
+                    ""
+                    (buffer-substring
+                     (region-beginning)
+                     (region-end)))
+                   (buffer-substring
+                    (region-beginning)
+                    (region-end)))
+                  ;; if the first entry in the kill-ring looks
+                  ;; like a DOI, let's use it.
+                  ((and ;; make sure the kill-ring has something in it
+                    (stringp (car kill-ring))
+                    (s-match "^10" (car kill-ring)))
+                   (car kill-ring))
+                  ;; maybe kill-ring matches http://dx.doi or somthing
+                  ((and ;; make sure the kill-ring has something in it
+                    (stringp (car kill-ring))
+                    (s-match
+                     "^http://dx\\.doi\\.org/"
+                     (car kill-ring)))
+                   (replace-regexp-in-string
+                    "^http://dx\\.doi\\.org/"
+                    ""
+                    (car kill-ring)))
+                  ((and ;; make sure the kill-ring has something in it
+                    (stringp (car kill-ring))
+                    (s-match
+                     "^https://dx\\.doi\\.org/"
+                     (car kill-ring)))
+                   (replace-regexp-in-string
+                    "^https://dx\\.doi\\.org/"
+                    ""
+                    (car kill-ring)))
+                  ((and ;; make sure the kill-ring has something in it
+                    (stringp (car kill-ring))
+                    (s-match
+                     (regexp-quote
+                      doi-utils-dx-doi-org-url)
+                     (car kill-ring)))
+                   (replace-regexp-in-string
+                    (regexp-quote
+                     doi-utils-dx-doi-org-url)
+                    ""
+                    (car kill-ring)))
+                  ;; otherwise, we have no initial input. You
+                  ;; will have to type it in.
+                  (t nil)))))
+  (message "Downloading %s" doi)
+  (setq *org-ref-add-ref-async--doi
+        doi
+        *org-ref-add-ref-async--bibfile
+        (completing-read
+         "Bibfile: "
+         (-uniq
+          (append
+           ;; see if we should add it to a bib-file defined in the file
+           (org-ref-find-bibliography)
+           ;; or any bib-files that exist in the current directory
+           (f-entries
+            "."
+            (lambda (f)
+              (and (not (string-match "#" f))
+                   (f-ext? f "bib"))))
+           ;; and last in the default bibliography
+           org-ref-default-bibliography))))
+  (let ((doi-utils-make-notes nil))
+    (require 'async)
+    (async-start
+     ;; What to do in the child process
+     `(lambda
+        ()
+        (setq load-path ',load-path)
+        (let ((noninteractive))
+          (require 'doi-utils))
+        ,(async-inject-variables
+          "\\`\\(org-ref\\)-")
+        ,(async-inject-variables
+          "\\`\\(doi-utils\\)-")
+        ,(async-inject-variables
+          "\\`\\(\\*org-ref-add-ref-async\\)-.*")
+        (doi-utils-add-bibtex-entry-from-doi
+         *org-ref-add-ref-async--doi
+         *org-ref-add-ref-async--bibfile)
+        *org-ref-add-ref-async--doi)
+     ;; What to do when it finishes
+     (lambda (result)
+       (message
+        "Successfully added %s "
+        result)))))
 
 ;;* The end
 (provide 'doi-utils)

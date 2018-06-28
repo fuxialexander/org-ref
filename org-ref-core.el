@@ -2327,12 +2327,15 @@ PATH is required for the org-link, but it does nothing here."
 
 ;;* Utilities
 ;;** create text citations from a bibtex entry
+;; (defun org-ref-bib-citation ()
+;;   "From a bibtex entry, create and return a citation string.
+;; If `bibtex-completion' library is loaded, return reference in APA
+;; format. Otherwise return a  citation string from `org-ref-get-bibtex-entry-citation'."
+;;   (org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
 (defun org-ref-bib-citation ()
-  "From a bibtex entry, create and return a citation string.
-If `bibtex-completion' library is loaded, return reference in APA
-format. Otherwise return a  citation string from `org-ref-get-bibtex-entry-citation'."
-  (org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
-
+  "From a bibtex entry, create and return a citation string."
+  (bibtex-completion-apa-format-reference
+   (org-ref-get-bibtex-key-under-cursor)))
 
 ;;** Open pdf in bibtex entry
 ;;;###autoload
@@ -2970,29 +2973,74 @@ If optional NEW-YEAR set it to that, otherwise prompt for it."
     (insert ",")))
 
 
+;; (defun orcb-key ()
+;;   "Replace the key in the entry."
+;;   (let ((key (funcall org-ref-clean-bibtex-key-function
+;; 		      (bibtex-generate-autokey))))
+;;     ;; first we delete the existing key
+;;     (bibtex-beginning-of-entry)
+;;     (re-search-forward bibtex-entry-maybe-empty-head)
+;;     (if (match-beginning bibtex-key-in-head)
+;; 	(delete-region (match-beginning bibtex-key-in-head)
+;; 		       (match-end bibtex-key-in-head)))
+;;     ;; check if the key is in the buffer
+;;     (when (save-excursion
+;; 	    (bibtex-search-entry key))
+;;       (save-excursion
+;; 	(bibtex-search-entry key)
+;; 	(bibtex-copy-entry-as-kill)
+;; 	(switch-to-buffer-other-window "*duplicate entry*")
+;; 	(bibtex-yank))
+;;       (setq key (bibtex-read-key "Duplicate Key found, edit: " key)))
+
+;;     (insert key)
+;;     (kill-new key)))
 (defun orcb-key ()
   "Replace the key in the entry."
-  (let ((key (funcall org-ref-clean-bibtex-key-function
-		      (bibtex-generate-autokey))))
+  (let ((oldkey (bibtex-completion-key-at-point))
+        (pdf (bibtex-completion-find-pdf
+              (bibtex-completion-key-at-point)))
+        (key (funcall
+              org-ref-clean-bibtex-key-function
+              (bibtex-generate-autokey))))
     ;; first we delete the existing key
+    (if pdf
+        (mapcar
+         #'(lambda (x)
+             (condition-case nil
+                 (rename-file
+                  x
+                  (downcase
+                   (replace-regexp-in-string
+                    oldkey
+                    key
+                    x)))
+               (error t)))
+         pdf))
     (bibtex-beginning-of-entry)
-    (re-search-forward bibtex-entry-maybe-empty-head)
-    (if (match-beginning bibtex-key-in-head)
-	(delete-region (match-beginning bibtex-key-in-head)
-		       (match-end bibtex-key-in-head)))
+    (re-search-forward
+     bibtex-entry-maybe-empty-head)
+    (if (match-beginning
+         bibtex-key-in-head)
+        (delete-region
+         (match-beginning
+          bibtex-key-in-head)
+         (match-end bibtex-key-in-head)))
     ;; check if the key is in the buffer
     (when (save-excursion
-	    (bibtex-search-entry key))
+            (bibtex-search-entry key))
       (save-excursion
-	(bibtex-search-entry key)
-	(bibtex-copy-entry-as-kill)
-	(switch-to-buffer-other-window "*duplicate entry*")
-	(bibtex-yank))
-      (setq key (bibtex-read-key "Duplicate Key found, edit: " key)))
-
+        (bibtex-search-entry key)
+        (bibtex-copy-entry-as-kill)
+        (switch-to-buffer-other-window
+         "*duplicate entry*")
+        (bibtex-yank))
+      (setq key
+            (bibtex-read-key
+             "Duplicate Key found, edit: "
+             key)))
     (insert key)
     (kill-new key)))
-
 
 (defun orcb-check-journal ()
   "Check entry at point to see if journal exists in `org-ref-bibtex-journal-abbreviations'.

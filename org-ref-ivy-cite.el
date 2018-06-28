@@ -32,6 +32,7 @@
 (require 'ivy)
 (require 'org-ref-bibtex)
 (require 'org-ref-citeproc)
+(require 'ivy-bibtex)
 (require 'bibtex-completion)
 
 (defvar org-ref-cite-types)
@@ -234,19 +235,84 @@ to add a new bibtex entry. The arg is selected from
     (insert "\n")))
 
 
+(defun org-ref-ivy-bibtex-get-pdf-for-entry (entry)
+  "Copy selected bibtex ENTRY to the clipboard."
+  (with-temp-buffer
+    (save-window-excursion
+      (ivy-bibtex-show-entry entry)
+      (doi-utils-get-bibtex-entry-pdf))))
+
+(defun org-ref-ivy-bibtex-get-update-for-entry (entry)
+  "Copy selected bibtex ENTRY to the clipboard."
+  (with-temp-buffer
+    (save-window-excursion
+      (ivy-bibtex-show-entry entry)
+      (call-interactively
+       #'doi-utils-update-bibtex-entry-from-doi))))
+
+(defun org-ref-ivy-bibtex-email-entry (entry)
+  "Insert selected ENTRY and attach pdf file to an email.
+Create email unless called from an email."
+  ;; (with-ivy-window
+  (let* ((key (cdr (assoc "=key=" entry)))
+         (entry (bibtex-completion-get-entry
+                 key))
+         (title (cdr (assoc "title" entry)))
+         (citation (bibtex-completion-apa-format-reference
+                    key))
+         pdf)
+    ;; when we have org-ref defined we may have pdf to find.
+    (when (boundp 'org-ref-pdf-directory)
+      (setq pdf
+            (expand-file-name
+             (concat key ".pdf")
+             org-ref-pdf-directory)))
+    (compose-mail)
+    (message-goto-body)
+    (insert citation "\n")
+    (message-goto-subject)
+    (insert
+     "Paper Sharing: "
+     title)
+    (message
+     "%s exists %s"
+     pdf
+     (file-exists-p pdf))
+    (when (file-exists-p pdf)
+      (mml-attach-file pdf))
+    (message-goto-to))
+  ;; )
+  )
+
+(defun org-ref-ivy-bibtex-insert-formatted-citation (entry)
+  "Insert formatted citations at point for selected ENTRY."
+  (with-ivy-window
+    (insert
+     (bibtex-completion-apa-format-reference
+      (bibtex-completion-get-value
+       "=key="
+       entry)))))
+
+(defun org-ref-ivy-bibtex-copy-formatted-citation (entry)
+  "Copy formatted citation to clipboard for ENTRY."
+  (kill-new
+   (bibtex-completion-apa-format-reference
+    (bibtex-completion-get-value
+     "=key="
+     entry))))
+
 (defvar org-ref-ivy-cite-actions
-  '(("b" or-ivy-bibtex-open-entry "Open bibtex entry")
-    ("B" or-ivy-bibtex-copy-entry "Copy bibtex entry")
-    ("p" or-ivy-bibtex-open-pdf "Open pdf")
-    ("n" or-ivy-bibtex-open-notes "Open notes")
-    ("u" or-ivy-bibtex-open-url "Open url")
-    ("d" or-ivy-bibtex-open-doi "Open doi")
-    ("k" or-ivy-bibtex-set-keywords "Add keywords")
-    ("e" or-ivy-bibtex-email-entry "Email entry")
-    ("f" or-ivy-bibtex-insert-formatted-citation "Insert formatted citation")
-    ("F" or-ivy-bibtex-copy-formatted-citation "Copy formatted citation")
-    ("a" or-ivy-bibtex-add-entry "Add bibtex entry"))
-  "List of additional actions for `org-ref-ivy-insert-cite-link' (the default action being to insert a citation).")
+    '(("b" ivy-bibtex-show-entry "Open entry")
+      ("p" ivy-bibtex-open-pdf "Open pdf")
+      ("n" ivy-bibtex-edit-notes "Open notes")
+      ("u" ivy-bibtex-open-url-or-doi "Open url or doi")
+      ("U" org-ref-ivy-bibtex-get-update-for-entry "Update entry from doi")
+      ("P" org-ref-ivy-bibtex-get-pdf-for-entry "Update PDF for entry")
+      ("k" org-ref-ivy-set-keywords "Add keywords")
+      ("e" org-ref-ivy-bibtex-email-entry "Email entry")
+      ("f" org-ref-ivy-bibtex-insert-formatted-citation "Insert formatted citation")
+      ("F" org-ref-ivy-bibtex-copy-formatted-citation "Copy formatted citation"))
+    "+reference org ref ivy action")
 
 (defvar org-ref-ivy-cite-re-builder 'ivy--regex-ignore-order
   "Regex builder to use in `org-ref-ivy-insert-cite-link'. Can be set to nil to use Ivy's default).")
@@ -379,23 +445,38 @@ If candidate is already in, remove it."
  org-ref-ivy-cite-actions)
 
 
+;; (defun org-ref-ivy-insert-cite-link (&optional arg)
+;;   "ivy function for interacting with bibtex.
+;; Uses `org-ref-find-bibliography' for bibtex sources, unless a
+;; prefix ARG is used, which uses `org-ref-default-bibliography'."
+;;   (interactive "P")
+;;   (setq org-ref-bibtex-files (if arg
+;; 				 org-ref-default-bibliography
+;; 			       (org-ref-find-bibliography)))
+;;   (setq org-ref-ivy-cite-marked-candidates '())
+
+;;   (ivy-read "Open: " (orhc-bibtex-candidates)
+;; 	    :require-match t
+;; 	    :keymap org-ref-ivy-cite-keymap
+;; 	    :re-builder org-ref-ivy-cite-re-builder
+;; 	    :action 'or-ivy-bibtex-insert-cite
+;; 	    :caller 'org-ref-ivy-insert-cite-link))
+
 (defun org-ref-ivy-insert-cite-link (&optional arg)
-  "ivy function for interacting with bibtex.
+    "Ivy function for interacting with bibtex.
 Uses `org-ref-find-bibliography' for bibtex sources, unless a
 prefix ARG is used, which uses `org-ref-default-bibliography'."
-  (interactive "P")
-  (setq org-ref-bibtex-files (if arg
-				 org-ref-default-bibliography
-			       (org-ref-find-bibliography)))
-  (setq org-ref-ivy-cite-marked-candidates '())
-
-  (ivy-read "Open: " (orhc-bibtex-candidates)
-	    :require-match t
-	    :keymap org-ref-ivy-cite-keymap
-	    :re-builder org-ref-ivy-cite-re-builder
-	    :action 'or-ivy-bibtex-insert-cite
-	    :caller 'org-ref-ivy-insert-cite-link))
-
+    (interactive "P")
+    ;; (setq org-ref-bibtex-files (if arg org-ref-default-bibliography (org-ref-find-bibliography)))
+    (when arg (bibtex-completion-clear-cache))
+    (bibtex-completion-init)
+    ;; (setq org-ref-ivy-cite-marked-candidates '())
+    (ivy-read "Open: " (bibtex-completion-candidates)
+              :require-match t
+              :keymap org-ref-ivy-cite-keymap
+              :re-builder org-ref-ivy-cite-re-builder
+              :action 'or-ivy-bibtex-insert-cite
+              :caller 'org-ref-ivy-insert-cite-link))
 
 (defun org-ref-ivy-cite-transformer (s)
   "Make entry red if it is marked."
@@ -443,37 +524,65 @@ Use a prefix arg to select the ref type."
 (require 'hydra)
 (setq hydra-is-helpful t)
 
-(defhydra org-ref-cite-hydra (:color blue)
-  "
+(defhydra org-ref-cite-hydra (:color blue :hint nil)
+    "
 _p_: Open pdf     _w_: WOS          _g_: Google Scholar _K_: Copy citation to clipboard
 _u_: Open url     _r_: WOS related  _P_: Pubmed         _k_: Copy key to clipboard
 _n_: Open notes   _c_: WOS citing   _C_: Crossref       _f_: Copy formatted entry
 _o_: Open entry   _e_: Email entry  ^ ^                 _q_: quit
 "
-  ("o" org-ref-open-citation-at-point nil)
-  ("p" org-ref-open-pdf-at-point nil)
-  ("n" org-ref-open-notes-at-point nil)
-  ("u" org-ref-open-url-at-point nil)
-  ("w" org-ref-wos-at-point nil)
-  ("r" org-ref-wos-related-at-point nil)
-  ("c" org-ref-wos-citing-at-point nil)
-  ("g" org-ref-google-scholar-at-point nil)
-  ("P" org-ref-pubmed-at-point nil)
-  ("C" org-ref-crossref-at-point nil)
-  ("K" org-ref-copy-entry-as-summary nil)
-  ("k" (progn
-	 (kill-new
-	  (car (org-ref-get-bibtex-key-and-file))))
-   nil)
-  ("f" (kill-new
-	(org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
-   nil)
+    ("o" org-ref-open-citation-at-point)
+    ("p" org-ref-open-pdf-at-point)
+    ("n" org-ref-open-notes-at-point)
+    ("u" org-ref-open-url-at-point)
+    ("w" org-ref-wos-at-point)
+    ("r" org-ref-wos-related-at-point)
+    ("c" org-ref-wos-citing-at-point)
+    ("g" org-ref-google-scholar-at-point)
+    ("P" org-ref-pubmed-at-point)
+    ("C" org-ref-crossref-at-point)
+    ("K" org-ref-copy-entry-as-summary)
+    ("k" (progn
+           (kill-new
+            (car (org-ref-get-bibtex-key-and-file)))))
+    ("f" (kill-new
+          (bibtex-completion-apa-format-reference (org-ref-get-bibtex-key-under-cursor))))
+    ("e" (kill-new (save-excursion
+                     (org-ref-open-citation-at-point)
+                     (org-ref-email-bibtex-entry))))
+    ("q" nil))
 
-  ("e" (kill-new (save-excursion
-		   (org-ref-open-citation-at-point)
-		   (org-ref-email-bibtex-entry)))
-   nil)
-  ("q" nil))
+;; (defhydra org-ref-cite-hydra (:color blue)
+;;   "
+;; _p_: Open pdf     _w_: WOS          _g_: Google Scholar _K_: Copy citation to clipboard
+;; _u_: Open url     _r_: WOS related  _P_: Pubmed         _k_: Copy key to clipboard
+;; _n_: Open notes   _c_: WOS citing   _C_: Crossref       _f_: Copy formatted entry
+;; _o_: Open entry   _e_: Email entry  ^ ^                 _q_: quit
+;; "
+;;   ("o" org-ref-open-citation-at-point nil)
+;;   ("p" org-ref-open-pdf-at-point nil)
+;;   ("n" org-ref-open-notes-at-point nil)
+;;   ("u" org-ref-open-url-at-point nil)
+;;   ("w" org-ref-wos-at-point nil)
+;;   ("r" org-ref-wos-related-at-point nil)
+;;   ("c" org-ref-wos-citing-at-point nil)
+;;   ("g" org-ref-google-scholar-at-point nil)
+;;   ("P" org-ref-pubmed-at-point nil)
+;;   ("C" org-ref-crossref-at-point nil)
+;;   ("K" org-ref-copy-entry-as-summary nil)
+;;   ("k" (progn
+;; 	 (kill-new
+;; 	  (car (org-ref-get-bibtex-key-and-file))))
+;;    nil)
+;;   ("f" (kill-new
+;; 	(org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
+;;    nil)
+
+;;   ("e" (kill-new (save-excursion
+;; 		   (org-ref-open-citation-at-point)
+;; 		   (org-ref-email-bibtex-entry)))
+;;    nil)
+;;   ("q" nil))
 
 
 
