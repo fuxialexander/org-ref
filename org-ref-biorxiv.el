@@ -2,6 +2,7 @@
 
 ;; * Code
 ;;
+(require 'org-ref-core)
 (require 'doi-utils)
 (require 'url-handlers)
 ;;;###autoload
