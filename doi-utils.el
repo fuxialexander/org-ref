@@ -582,7 +582,7 @@ REDIRECT-URL is where the pdf url will be in."
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
   (if (display-graphic-p)
       (if (eq system-type 'darwin)
-          (prog
+          (progn
            (do-applescript
             (concat
              "
@@ -799,7 +799,8 @@ checked."
 	 ((and (not arg)
 	       doi
 	       (setq pdf-url (doi-utils-get-pdf-url doi)))
-	  (url-copy-file pdf-url pdf-file)
+      (let ((url-proxy-services nil))
+	    (url-copy-file pdf-url pdf-file))
 	  ;; now check if we got a pdf
           (if (org-ref-pdf-p pdf-file)
               (message "%s saved" pdf-file)
@@ -828,20 +829,19 @@ checked."
   "Try to get json metadata for DOI.  Open the DOI in a browser if we do not get it."
   (let ((json-object-type 'plist)
         json-data)
-    (with-eval-after-load 'url
-      (setq url-request-method "GET"
-            url-proxy-services nil
-            url-mime-accept-string "application/citeproc+json"))
-    (with-current-buffer
-        (url-retrieve-synchronously
-         (concat "http://dx.doi.org/" doi))
-      (setq json-data (buffer-substring url-http-end-of-headers (point-max)))
-      (if (or (string-match "Resource not found" json-data)
-              (string-match "Status *406" json-data))
-          (progn
-            (browse-url (concat doi-utils-dx-doi-org-url doi))
-            (error "Resource not found.  Opening website"))
-        (json-read-from-string json-data)))))
+    (let ((url-request-method "GET")
+          (url-proxy-services nil)
+          (url-mime-accept-string "application/citeproc+json"))
+      (with-current-buffer
+          (url-retrieve-synchronously
+           (concat "http://dx.doi.org/" doi))
+        (setq json-data (buffer-substring url-http-end-of-headers (point-max)))
+        (if (or (string-match "Resource not found" json-data)
+                (string-match "Status *406" json-data))
+            (progn
+              (browse-url (concat doi-utils-dx-doi-org-url doi))
+              (error "Resource not found.  Opening website"))
+          (json-read-from-string json-data))))))
 
 ;; We can use that data to construct a bibtex entry. We do that by defining a
 ;; template, and filling it in. I wrote this template expansion code which makes
@@ -1375,6 +1375,7 @@ Data is retrieved from the doi in the entry."
           "\\`\\(doi-utils\\)-")
         ,(async-inject-variables
           "\\`\\(\\*org-ref-add-ref-async\\)-.*")
+        (ignore-errors (doi-utils-get-json-metadata "10.1038/s41588-018-0162-4"))
         (doi-utils-add-bibtex-entry-from-doi
          *org-ref-add-ref-async--doi
          *org-ref-add-ref-async--bibfile)

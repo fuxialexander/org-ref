@@ -121,29 +121,29 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
 ;;;###autoload
 ;; <a href="/highwire/citation/73994/bibtext"
 (defun org-ref-biorxiv--get-bibtex (url)
-  (with-eval-after-load 'url
-      (setq url-proxy-services nil))
-  (setq *doi-utils-waiting* t)
-  (url-retrieve
-   url
-   (lambda (cbargs)
-     (goto-char (point-min))
-     (re-search-forward
-      "<a href=\"\\(/highwire/citation/.*/bibtext\\)\""
-      nil
-      t)
-     (setq *doi-utils-biorxiv-bibtex-url*
-           (concat
-            "https://www.biorxiv.org"
-            (match-string 1))
-           *doi-utils-waiting*
-           nil)))
-  (while *doi-utils-waiting*
-    (sleep-for 0.1))
-  (goto-char (point-max))
-  (url-insert
-   (url-retrieve-synchronously
-    *doi-utils-biorxiv-bibtex-url*)))
+  (require 'url)
+  (let ((url-proxy-services nil))
+    (setq *doi-utils-waiting* t)
+    (url-retrieve
+     url
+     (lambda (cbargs)
+       (goto-char (point-min))
+       (re-search-forward
+        "<a href=\"\\(/highwire/citation/.*/bibtext\\)\""
+        nil
+        t)
+       (setq *doi-utils-biorxiv-bibtex-url*
+             (concat
+              "https://www.biorxiv.org"
+              (match-string 1))
+             *doi-utils-waiting*
+             nil)))
+    (while *doi-utils-waiting*
+      (sleep-for 0.1))
+    (goto-char (point-max))
+    (url-insert
+     (url-retrieve-synchronously
+      *doi-utils-biorxiv-bibtex-url*))))
 
 (defun biorxiv-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
