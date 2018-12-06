@@ -93,7 +93,10 @@ See also `org-ref-notes-function'."
 (defcustom org-ref-default-bibliography
   nil
   "List of bibtex files to search for.
-You should use full-paths for each file."
+You should use full-paths for each file. Note that you must
+include a bibliography link in your document if you will be
+exporting it to pdf; org-ref-default-bibliography is not
+used by the LaTeX exporter."
   :type '(repeat :tag "List of bibtex files" file)
   :group 'org-ref)
 
@@ -207,6 +210,7 @@ function in `org-ref-completion-library'."
 
 (defcustom org-ref-cite-keymap
   (let ((map (copy-keymap org-mouse-map)))
+    (define-key map (kbd "H-o") 'org-ref-cite-hydra/body)
     (define-key map (kbd "H-b") 'org-ref-open-citation-at-point)
     (define-key map (kbd "H-u") 'org-ref-open-url-at-point)
     (define-key map (kbd "H-p") 'org-ref-open-pdf-at-point)
@@ -449,7 +453,8 @@ http://ctan.mirrorcatalogs.com/macros/latex/contrib/biblatex/doc/biblatex.pdf"
     orcb-clean-doi
     orcb-clean-pages
     orcb-check-journal
-    org-ref-sort-bibtex-entry)
+    org-ref-sort-bibtex-entry
+    orcb-fix-spacing)
   "Hook that is run in `org-ref-clean-bibtex-entry'.
 The functions should have no arguments, and
 operate on the bibtex entry at point. You can assume point starts
@@ -629,9 +634,11 @@ If so return the position for `goto-char'."
   (concat "\\(" (mapconcat
                  (lambda (x)
 		   (replace-regexp-in-string "\*" "\\\\*" x))
-                 org-ref-cite-types "\\|") ":\\)"
+                 org-ref-cite-types "\\|") "\\):"
                  "\\([a-zA-Z0-9-_:\\./]+,?\\)+")
-  "Regexp for cite links.")
+  "Regexp for cite links.
+Group 1 contains the cite type.
+Group 2 contains the keys.")
 
 
 (defvar org-ref-label-re
@@ -910,7 +917,8 @@ we open it, otherwise prompt for which one to open."
   "Find BIBFILE as local file, or using kpsewhich or bibinputs."
   (or (if (file-exists-p bibfile) bibfile)
       (org-ref-bibfile-kpsewhich bibfile)
-      ;; this should never be reached because kpsewhich is stronger
+      ;; this should never be reached if bibfile exists, because kpsewhich is
+      ;; stronger
       (org-ref-locate-file bibfile (org-ref-bibinputs))))
 
 
@@ -969,8 +977,10 @@ PREDICATE."
 	;; save the key we clicked on.
 	(setq bibfile (org-ref-strip-string
 		       (buffer-substring key-beginning key-end)))
-	;; open file on click
-        (find-file (org-ref-find-bibfile bibfile))))))
+	;; open file on click. I use or because org-ref-find-bibfile returns nil
+	;; if the file doesn't exist, and clicking should open the file in that
+	;; case.
+        (find-file (or (org-ref-find-bibfile bibfile) bibfile))))))
 
 
 (defun org-ref-bibliography-format (keyword desc format)
@@ -1002,11 +1012,12 @@ prompted for a file.
 
 ARG does nothing. I think it is a required signature."
   (let* ((keys (reverse (org-ref-get-bibtex-keys)))
-	 (possible-files (append org-ref-default-bibliography
-				 (f-entries "." (lambda (f) (f-ext? f "bib")))))
+	 (possible-files (org-ref-possible-bibfiles))
 	 (found '()))
 
-    ;; remove bib links
+    ;; remove bib links, we will be replacing them. It is debatable if this is a
+    ;; good idea. I could easily be persuaded not to do this, but it is also not
+    ;; a great idea to have multiple bibliography links.
     (org-element-map (org-element-parse-buffer)
 	'link (lambda (link)
 		(when (string= "bibliography"
@@ -1015,20 +1026,23 @@ ARG does nothing. I think it is a required signature."
 					  (org-element-property :end link))
 			""))))
 
-    ;; Get bibfiles
-    (setq found (-uniq (cl-loop for key in keys
-			        collect
-			        (catch 'result
-			          (cl-loop for file in possible-files do
-					   (if (org-ref-key-in-file-p
-					        key
-					        (file-truename file))
-					       (throw 'result
-						      (file-relative-name file))))))))
-
-    (format "bibliography:%s"
-	    (or (mapconcat #'identity found ",")
-		(read-file-name "enter file: " nil nil nil)))))
+    ;; Get bibfiles containing keys
+    (setq found
+	  (mapconcat #'identity
+		     (-uniq (cl-loop for key in keys
+				     collect
+				     (catch 'result
+				       (cl-loop for file in possible-files do
+						(if (org-ref-key-in-file-p
+						     key
+						     (file-truename file))
+						    (throw 'result
+							   (file-relative-name file)))))))
+		     ","))
+    (concat "bibliography:"
+	    (if (string= found "")
+		(completing-read "Bibfile: " possible-files)
+	      found))))
 
 
 (defun org-ref-bibliography-face-fn (path)
@@ -1108,6 +1122,29 @@ font-lock-warning-face if any file does not exist."
              ;; Other styles should not have an output for this
              (t
               ""))))
+
+(defun org-bibliographystyle-complete-link (&optional arg)
+  "Completion function for bibliography style links."
+  (when (executable-find "kpsewhich")
+    (concat "bibliographystyle:"
+	    (completing-read "Style: " (mapcar 'file-name-nondirectory
+					       (mapcar 'file-name-sans-extension
+						       (-flatten
+							(mapcar (lambda (path)
+								  (setq path (replace-regexp-in-string "!" "" path))
+								  (when (file-directory-p path)
+								    (f-entries path (lambda (f) (f-ext? f "bst")) t)))
+								(split-string
+								 ;; https://tex.stackexchange.com/questions/431948/get-a-list-of-installed-bibliography-styles-with-kpsewhich?noredirect=1#comment1082436_431948
+								 (shell-command-to-string "kpsewhich -expand-path '$BSTINPUTS'")
+								 ":")))))))))
+
+
+(defun org-ref-insert-bibliographystyle-link ()
+  "Insert a bibliographystyle link with completion."
+  (interactive)
+  (insert (org-bibliographystyle-complete-link)))
+
 
 ;;;###autoload
 (defun org-ref-insert-bibliography-link ()
@@ -1766,7 +1803,7 @@ https://www.ctan.org/tex-archive/macros/latex/contrib/cleveref"
 ;;** cite link
 
 (defun org-ref-get-bibtex-key-under-cursor ()
-  "Return key under the bibtex cursor.
+  "Return key under the cursor in org-mode.
 We search forward from point to get a comma, or the end of the link,
 and then backwards to get a comma, or the beginning of the link. that
 delimits the keyword we clicked on. We also strip the text
@@ -1854,8 +1891,7 @@ properties."
 (defun org-ref-find-bibliography ()
   "Find the bibliography in the buffer.
 This function sets and returns cite-bibliography-files, which is
-a list of files either from bibliography:f1.bib,f2.bib
-\\bibliography{f1,f2}, internal bibliographies, from files in the
+a list of files either from }, internal bibliographies, from files in the
 BIBINPUTS env var, and finally falling back to what the user has
 set in `org-ref-default-bibliography'"
   (catch 'result
@@ -1868,17 +1904,25 @@ set in `org-ref-default-bibliography'"
       (save-restriction
         (widen)
         (goto-char (point-min))
+	(setq org-ref-bibliography-files ())
 
         ;; look for org-ref bibliography or addbibresource links
-        (setq org-ref-bibliography-files ())
         (while (re-search-forward
-                ;; I added the + here to avoid matching +bibliography: keywords.
-                "\\(?:^[\[]\\{2\\}\\)?\\(bibliography\\|addbibresource\\):\\([^\]\|\n]+\\)"
+                ;; This just searches for these strings, and then checks if it
+                ;; is on a link. This is faster than parsing the org-file when
+                ;; it gets large.
+                "\\(bibliography\\|addbibresource\\):"
                 nil t)
-          (dolist (bibfile (org-ref-split-and-strip-string (match-string-no-properties 2)))
-	    (let ((bibf (org-ref-find-bibfile bibfile)))
-	      (when bibf
-		(push bibf org-ref-bibliography-files)))))
+	  (let ((link (org-element-context)))
+	    (when (and (eq (car link) 'link)
+		       (or
+			(string= (org-element-property :type link) "bibliography")
+			(string= (org-element-property :type link) "addbibresource")))
+	      (dolist (bibfile (org-ref-split-and-strip-string
+				(org-element-property :path link)))
+		(let ((bibf (org-ref-find-bibfile bibfile)))
+		  (when bibf
+		    (push bibf org-ref-bibliography-files)))))))
 
         (when org-ref-bibliography-files
           (throw 'result
@@ -1921,6 +1965,20 @@ set in `org-ref-default-bibliography'"
     (insert-file-contents filename)
     (bibtex-set-dialect (parsebib-find-bibtex-dialect) t)
     (bibtex-search-entry key)))
+
+
+(defun org-ref-possible-bibfiles ()
+  "Make a unique list of possible bibliography files for completing-read"
+  (-uniq
+   (append
+	;; see if we should add it to a bib-file defined in the file
+	(org-ref-find-bibliography)
+	;; or any bib-files that exist in the current directory
+	(f-entries "." (lambda (f)
+				     (and (not (string-match "#" f))
+					      (f-ext? f "bib"))))
+	;; and last in the default bibliography
+    org-ref-default-bibliography)))
 
 
 (defun org-ref-get-bibtex-key-and-file (&optional key)
@@ -2328,14 +2386,21 @@ PATH is required for the org-link, but it does nothing here."
 ;;* Utilities
 ;;** create text citations from a bibtex entry
 ;; (defun org-ref-bib-citation ()
-;;   "From a bibtex entry, create and return a citation string.
-;; If `bibtex-completion' library is loaded, return reference in APA
-;; format. Otherwise return a  citation string from `org-ref-get-bibtex-entry-citation'."
-;;   (org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
+;;   "From a bibtex entry, create and return a citation string."
+;;   (bibtex-completion-apa-format-reference
+;;    (org-ref-get-bibtex-key-under-cursor)))
+
 (defun org-ref-bib-citation ()
-  "From a bibtex entry, create and return a citation string."
-  (bibtex-completion-apa-format-reference
-   (org-ref-get-bibtex-key-under-cursor)))
+  "From a bibtex entry, create and return a citation string.
+If `bibtex-completion' library is loaded, return reference in APA
+format. Otherwise return a  citation string from `org-ref-get-bibtex-entry-citation'."
+  (save-excursion
+    (bibtex-beginning-of-entry)
+    (let* ((bibtex-expand-strings t)
+           (entry (bibtex-parse-entry t))
+           (key (reftex-get-bib-field "=key=" entry)))
+      (org-ref-format-entry key))))
+
 
 ;;** Open pdf in bibtex entry
 ;;;###autoload
@@ -2796,8 +2861,8 @@ file.  Makes a new buffer with clickable links."
          (other-fields)
          (type (cdr (assoc "=type=" entry)))
          (key (cdr (assoc "=key=" entry)))
-	 (field-order (cdr (assoc (if type (downcase type))
-				  org-ref-bibtex-sort-order))))
+	     (field-order (cdr (assoc (if type (downcase type))
+				                  org-ref-bibtex-sort-order))))
 
     ;; these are the fields we want to order that are in this entry
     (setq entry-fields (mapcar (lambda (x) (car x)) entry))
@@ -2807,30 +2872,31 @@ file.  Makes a new buffer with clickable links."
 
     ;;these are the other fields in the entry, and we sort them alphabetically.
     (setq other-fields
-	  (sort (-remove (lambda(x) (member x field-order)) entry-fields)
-		'string<))
+	      (sort (-remove (lambda(x) (member x field-order)) entry-fields)
+		        'string<))
 
-    (bibtex-kill-entry)
-    (insert
-     (concat "@" type "{" key ",\n"
-	     (mapconcat
-	      (lambda (field)
-		(when (member field entry-fields)
-		  (format "%s = %s,"
-			  field
-			  (cdr (assoc field entry)))))
-	      field-order "\n")
-	     ;; now add the other fields
-	     (mapconcat
-	      (lambda (field)
-		(cl-loop for (f . v) in entry concat
-			 (when (string= f field)
-			   (format "%s = %s,\n" f v))))
-	      (-uniq other-fields) "\n")
-	     "\n}\n\n"))
-    (bibtex-find-entry key)
-    (bibtex-fill-entry)
-    (bibtex-clean-entry)))
+    (save-restriction
+      (bibtex-kill-entry)
+      (insert
+       (concat "@" type "{" key ",\n"
+	           (mapconcat
+	            (lambda (field)
+		          (when (member field entry-fields)
+		            (format "%s = %s,"
+			                field
+			                (cdr (assoc field entry)))))
+	            field-order "\n")
+	           ;; now add the other fields
+	           (mapconcat
+	            (lambda (field)
+		          (cl-loop for (f . v) in entry concat
+			               (when (string= f field)
+			                 (format "%s = %s,\n" f v))))
+	            (-uniq other-fields) "\n")
+	           "\n}"))
+      (bibtex-find-entry key)
+      (bibtex-fill-entry)
+      (bibtex-clean-entry))))
 
 ;; downcase entries
 ;;;###autoload
@@ -3060,6 +3126,34 @@ If not, issue a warning."
           (message "Journal \"%s\" not found in org-ref-bibtex-journal-abbreviations." journal))))))
 
 
+(defun orcb-fix-spacing ()
+  "Delete whitespace and fix spacing between entries."
+  (let (beg end)
+    (save-excursion
+      (save-restriction
+    	(widen)
+	(bibtex-beginning-of-entry)
+	(setq beg (point))
+	(bibtex-end-of-entry)
+	(setq end (if (re-search-forward bibtex-any-entry-maybe-empty-head nil t)
+		      (progn (beginning-of-line)
+			     (point))
+		    (point-max)))
+	;; 1. delete whitespace
+	(narrow-to-region beg end)
+	(delete-trailing-whitespace)
+	;; 2. delete consecutive empty lines
+	(goto-char end)
+	(while (re-search-backward "\n\n\n+" nil 'move)
+	  (replace-match "\n\n"))
+	;; 3. add one line between entries
+	(goto-char end)
+	(forward-line -1)
+	(when (looking-at "[}][ \t]*\\|@Comment.+\\|%.+")
+	  (end-of-line)
+	  (newline))))))
+
+
 ;;;###autoload
 (defun org-ref-clean-bibtex-entry ()
   "Clean and replace the key in a bibtex entry.
@@ -3254,90 +3348,92 @@ move to the beginning of the previous cite link after this one."
 (defun org-ref-get-label-context (label)
   "Return a string of context around a LABEL."
   (save-excursion
-    (catch 'result
-      (goto-char (point-min))
-      (when (re-search-forward
-             (format "label:%s\\b" label) nil t)
-        (throw 'result (buffer-substring
-                        (progn
-                          (forward-line -1)
-                          (beginning-of-line)
-                          (point))
-                        (progn
-                          (forward-line 4)
-                          (point)))))
+    (save-restriction
+      (widen)
+      (catch 'result
+	(goto-char (point-min))
+	(when (re-search-forward
+	       (format "label:%s\\b" label) nil t)
+	  (throw 'result (buffer-substring
+			  (progn
+			    (forward-line -1)
+			    (beginning-of-line)
+			    (point))
+			  (progn
+			    (forward-line 4)
+			    (point)))))
 
-      (goto-char (point-min))
-      (when (re-search-forward
-             (format "\\label{%s}" label) nil t)
-        (throw 'result (buffer-substring
-                        (progn
-                          (forward-line -1)
-                          (beginning-of-line)
-                          (point))
-                        (progn
-                          (forward-line 4)
-                          (point)))))
+	(goto-char (point-min))
+	(when (re-search-forward
+	       (format "\\label{%s}" label) nil t)
+	  (throw 'result (buffer-substring
+			  (progn
+			    (forward-line -1)
+			    (beginning-of-line)
+			    (point))
+			  (progn
+			    (forward-line 4)
+			    (point)))))
 
-      (goto-char (point-min))
-      (when (re-search-forward
-             (format "^\\( \\)*#\\+label:\\s-*\\(%s\\)\\b" label) nil t)
-        (throw 'result (buffer-substring
-                        (progn
-                          (forward-line -1)
-                          (beginning-of-line)
-                          (point))
-                        (progn
-                          (forward-line 4)
-                          (point)))))
+	(goto-char (point-min))
+	(when (re-search-forward
+	       (format "^\\( \\)*#\\+label:\\s-*\\(%s\\)\\b" label) nil t)
+	  (throw 'result (buffer-substring
+			  (progn
+			    (forward-line -1)
+			    (beginning-of-line)
+			    (point))
+			  (progn
+			    (forward-line 4)
+			    (point)))))
 
-      (goto-char (point-min))
-      (when (re-search-forward
-             (format "^\\( \\)*#\\+tblname:\\s-*\\(%s\\)\\b" label) nil t)
-        (throw 'result (buffer-substring
-                        (progn
-                          (forward-line -1)
-                          (beginning-of-line)
-                          (point))
-                        (progn
-                          (forward-line 4)
-                          (point)))))
+	(goto-char (point-min))
+	(when (re-search-forward
+	       (format "^\\( \\)*#\\+tblname:\\s-*\\(%s\\)\\b" label) nil t)
+	  (throw 'result (buffer-substring
+			  (progn
+			    (forward-line -1)
+			    (beginning-of-line)
+			    (point))
+			  (progn
+			    (forward-line 4)
+			    (point)))))
 
-      (goto-char (point-min))
-      (when (re-search-forward
-             (format "^\\( \\)*#\\+name:\\s-*\\(%s\\)\\b" label) nil t)
-        (throw 'result (buffer-substring
-                        (progn
-                          (forward-line -1)
-                          (beginning-of-line)
-                          (point))
-                        (progn
-                          (forward-line 4)
-                          (point)))))
-      ;; ;; CUSTOM_ID
-      (goto-char (point-min))
-      ;; do we have a CUSTOM-ID?
-      (let ((heading (org-map-entries
-		      (lambda ()
-			(buffer-substring
-			 (progn
-			   (forward-line -1)
-			   (beginning-of-line)
-			   (point))
-			 (progn
-			   (forward-line 4)
-			   (point))))
-		      (format  "CUSTOM_ID=\"%s\"" label))))
-	;; (message-box heading)
-	(when heading
-	  (throw 'result (car heading))))
-      ;; radio target
-      (goto-char (point-min))
-      (when (re-search-forward (format "<<%s>>" (regexp-quote label)) nil t)
-	(throw 'result (match-string 0)))
+	(goto-char (point-min))
+	(when (re-search-forward
+	       (format "^\\( \\)*#\\+name:\\s-*\\(%s\\)\\b" label) nil t)
+	  (throw 'result (buffer-substring
+			  (progn
+			    (forward-line -1)
+			    (beginning-of-line)
+			    (point))
+			  (progn
+			    (forward-line 4)
+			    (point)))))
+	;; ;; CUSTOM_ID
+	(goto-char (point-min))
+	;; do we have a CUSTOM-ID?
+	(let ((heading (org-map-entries
+			(lambda ()
+			  (buffer-substring
+			   (progn
+			     (forward-line -1)
+			     (beginning-of-line)
+			     (point))
+			   (progn
+			     (forward-line 4)
+			     (point))))
+			(format  "CUSTOM_ID=\"%s\"" label))))
+	  ;; (message-box heading)
+	  (when heading
+	    (throw 'result (car heading))))
+	;; radio target
+	(goto-char (point-min))
+	(when (re-search-forward (format "<<%s>>" (regexp-quote label)) nil t)
+	  (throw 'result (match-string 0)))
 
 
-      (throw 'result "!!! NO CONTEXT FOUND !!!"))))
+	(throw 'result "!!! NO CONTEXT FOUND !!!")))))
 
 
 ;;;###autoload
@@ -3438,7 +3534,7 @@ move to the beginning of the previous cite link after this one."
                          (buffer-substring key-beginning key-end)))
                   (let ((file (org-ref-find-bibfile bibfile)))
                     (message (if file "%s exists." "!!! %s NOT FOUND !!!")
-                             file))))))))))))
+                             (or file bibfile)))))))))))))
 
 ;;** aliases
 (defalias 'oro 'org-ref-open-citation-at-point)

@@ -740,7 +740,7 @@ there is a DOI."
 
 
 ;;;###autoload
-(defun org-ref-bibtex-pdf (doi)
+(defun org-ref-bibtex-pdf (&optional _)
   "Open the pdf for the bibtex entry at point.
 Thin wrapper to get `org-ref-bibtex' to open pdf, because it
 calls functions with a DOI argument."
@@ -923,7 +923,6 @@ I prefer the hydra interfaces above.")
   "Menu command to run in a bibtex entry.
 Functions from `org-ref-bibtex-menu-funcs'.  They all rely on the
 entry having a doi."
-
   (interactive)
   ;; construct menu string as a message
   (message
@@ -941,8 +940,7 @@ entry having a doi."
        (elt
         choice
         2)
-       (org-ref-bibtex-entry-doi)
-       ))))
+       (org-ref-bibtex-entry-doi)))))
 
 (defalias 'jb 'org-ref-bibtex)
 

@@ -89,7 +89,8 @@
 (defcustom doi-utils-timestamp-format-function
   'current-time-string
   "The function to format the timestamp for a bibtex entry.
-Set to nil to avoid setting timestamps in the entries."
+Set to a function that returns nil to avoid setting timestamps in the entries.
+e.g. (lambda () nil)"
   :type 'function
   :group 'doi-utils)
 
@@ -829,14 +830,15 @@ checked."
   "Try to get json metadata for DOI.  Open the DOI in a browser if we do not get it."
   (let ((json-object-type 'plist)
         json-data)
-    (let ((url-request-method "GET")
-          (url-proxy-services nil)
+    (let ((url-proxy-services nil)
+          (url-request-method "GET")
           (url-mime-accept-string "application/citeproc+json"))
       (with-current-buffer
           (url-retrieve-synchronously
            (concat "http://dx.doi.org/" doi))
         (setq json-data (buffer-substring url-http-end-of-headers (point-max)))
-        (if (or (string-match "Resource not found" json-data)
+        (if (or (string-match "<title>Error: DOI Not Found</title>" json-data)
+                (string-match "Resource not found" json-data)
                 (string-match "Status *406" json-data))
             (progn
               (browse-url (concat doi-utils-dx-doi-org-url doi))
@@ -983,9 +985,10 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
   (bibtex-set-field
      "journaltitle"
      (bibtex-autokey-get-field "journal"))
-  (when doi-utils-timestamp-format-function
-    (bibtex-set-field doi-utils-timestamp-field
-		      (funcall doi-utils-timestamp-format-function)))
+  (let ((ts (funcall doi-utils-timestamp-format-function)))
+    (when ts
+      (bibtex-set-field doi-utils-timestamp-field
+			            ts)))
   (org-ref-clean-bibtex-entry)
   ;; try to get pdf
   (when doi-utils-download-pdf
@@ -1074,18 +1077,7 @@ Argument BIBFILE the bibliography to use."
             nil)))))
 
   (unless bibfile
-    (setq bibfile (completing-read
-		   "Bibfile: "
-		   (-uniq
-		    (append
-		     ;; see if we should add it to a bib-file defined in the file
-		     (org-ref-find-bibliography)
-		     ;; or any bib-files that exist in the current directory
-		     (f-entries "." (lambda (f)
-				      (and (not (string-match "#" f))
-					   (f-ext? f "bib"))))
-		     ;; and last in the default bibliography
-		     org-ref-default-bibliography)))))
+    (setq bibfile (completing-read "Bibfile: " (org-ref-possible-bibfiles))))
   ;; Wrap in save-window-excursion to restore your window arrangement after this
   ;; is done.
   (save-window-excursion
