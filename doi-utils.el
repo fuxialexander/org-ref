@@ -53,6 +53,11 @@
 (require 'bibtex)
 (require 'dash)
 (require 'json)
+(require 'org)                          ; org-add-link-type
+
+(or (require 'ol-bibtex nil t)
+    (require 'org-bibtex)) ; org-bibtex-yank
+
 (require 'url-http)
 
 ;;* Customization
@@ -323,6 +328,12 @@ Argument REDIRECT-URL URL you are redirected to."
 (defun acs-pdf-url-2 (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
   (when (string-match "^http://pubs.acs.org/doi/" *doi-utils-redirect*)
+    (replace-regexp-in-string "/doi/" "/doi/pdf/" *doi-utils-redirect*)))
+
+;; 1/18/2019: It looks like they are using https now
+(defun acs-pdf-url-3 (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (when (string-match "^https://pubs.acs.org/doi/" *doi-utils-redirect*)
     (replace-regexp-in-string "/doi/" "/doi/pdf/" *doi-utils-redirect*)))
 
 
@@ -720,6 +731,7 @@ It would be better to parse this, but here I just use a regexp.
        'springer-pdf-url
        'acs-pdf-url-1
        'acs-pdf-url-2
+       'acs-pdf-url-3
        'iop-pdf-url
        'jstor-pdf-url
        'aip-pdf-url
@@ -779,16 +791,14 @@ checked."
   (interactive "P")
   (save-excursion
     (bibtex-beginning-of-entry)
-    (let (;; get doi, removing http://dx.doi.org/ if it is there.
+    (let ( ;; get doi, removing http://dx.doi.org/ if it is there.
           (doi (replace-regexp-in-string
                 "https?://\\(dx.\\)?.doi.org/" ""
                 (bibtex-autokey-get-field "doi")))
-          (key)
+          (key (cdr (assoc "=key=" (bibtex-parse-entry))))
           (pdf-url)
           (pdf-file))
-      ;; get the key and build pdf filename.
-      (re-search-forward bibtex-entry-maybe-empty-head)
-      (setq key (match-string bibtex-key-in-head))
+
       (setq pdf-file (concat
 		      (if org-ref-pdf-directory
 			  (file-name-as-directory org-ref-pdf-directory)
@@ -814,7 +824,9 @@ checked."
 		     pdf-file))
 	 ((equal arg '(16))
 	  (with-current-buffer (read-buffer-to-switch "Pdf buffer: ")
-	    (write-file pdf-file))))
+	    (write-file pdf-file)))
+	 (t
+	  (message "We don't have a recipe for this journal.")))
 	(when (and doi-utils-open-pdf-after-download (file-exists-p pdf-file))
 	  (org-open-file pdf-file))))))
 
@@ -956,8 +968,11 @@ MATCHING-TYPES."
 (doi-utils-def-bibtex-type book ("book")
                            author title series publisher year pages doi url)
 
-(doi-utils-def-bibtex-type inbook ("book-chapter" "reference-entry")
+(doi-utils-def-bibtex-type inbook ("chapter" "book-chapter" "reference-entry")
                            author title booktitle series publisher year pages doi url)
+
+(doi-utils-def-bibtex-type misc ("posted-content")
+			   author title year doi url)
 
 
 
@@ -990,6 +1005,8 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
       (bibtex-set-field doi-utils-timestamp-field
 			            ts)))
   (org-ref-clean-bibtex-entry)
+  (save-buffer)
+
   ;; try to get pdf
   (when doi-utils-download-pdf
     (doi-utils-get-bibtex-entry-pdf))
@@ -1377,6 +1394,16 @@ Data is retrieved from the doi in the entry."
        (message
         "Successfully added %s "
         result)))))
+
+;; * Convenience
+
+(defun doi-utils-toggle-pdf-download ()
+  "Toggle the setting of `doi-utils-download-pdf'.
+I find this useful when downloading the pdfs slows down adding a
+lot of references; then you just toggle it off."
+  (interactive)
+  (message "Setting doi-utils-download-pdf to %s"
+	   (setq doi-utils-download-pdf (not doi-utils-download-pdf))))
 
 ;;* The end
 (provide 'doi-utils)

@@ -808,10 +808,7 @@ _n_: Open notes                               _T_: Title case
   ("R" org-ref-bibtex-crossref)
   ("g" org-ref-bibtex-google-scholar)
   ("N" org-ref-bibtex-new-entry/body)
-  ("n" (progn
-	 (bibtex-beginning-of-entry)
-	 (bibtex-completion-edit-notes
-	  (list (cdr (assoc "=key=" (bibtex-parse-entry t)))))))
+  ("n" org-ref-open-bibtex-notes)
   ("o" (lambda ()
 	 (interactive)
 	 (bibtex-copy-entry-as-kill)
@@ -1318,11 +1315,11 @@ of format strings used."
 	   (format-string)
 	   (ref))
       (if (null entry)
-	  "!!! No entry found !!!"
-	(setq format-string (or (cdr (assoc (downcase (bibtex-completion-get-value "=type=" entry)) formats))
-				"${author}, /${title}/ (${year})."))
-	(setq ref (s-format format-string 'bibtex-completion-apa-get-value entry))
-	(replace-regexp-in-string "\\([.?!]\\)\\." "\\1" ref)))))
+          "!!! No entry found !!!"
+        (setq format-string (cdr (or (assoc (downcase (bibtex-completion-get-value "=type=" entry)) formats)
+                                     (assoc nil formats))))
+        (setq ref (s-format format-string 'bibtex-completion-apa-get-value entry))
+        (replace-regexp-in-string "\\([.?!]\\)\\." "\\1" ref)))))
 
 
 (defun org-ref-format-entry (key)
