@@ -124,6 +124,10 @@ Also cleans entry using ‘org-ref’, and tries to download the corresponding p
   (require 'url)
   (let ((url-proxy-services nil))
     (setq *doi-utils-waiting* t)
+    (setenv "ALL_PROXY")
+    (setenv "SOCKS_PROXY")
+    (setenv "HTTP_PROXY")
+    (setenv "HTTPS_PROXY")
     (url-retrieve
      url
      (lambda (cbargs)

@@ -811,7 +811,11 @@ checked."
 	       doi
 	       (setq pdf-url (doi-utils-get-pdf-url doi)))
       (let ((url-proxy-services nil))
-	    (url-copy-file pdf-url pdf-file))
+        (setenv "ALL_PROXY")
+        (setenv "SOCKS_PROXY")
+        (setenv "HTTP_PROXY")
+        (setenv "HTTPS_PROXY")
+        (url-copy-file pdf-url pdf-file))
 	  ;; now check if we got a pdf
           (if (org-ref-pdf-p pdf-file)
               (message "%s saved" pdf-file)
@@ -843,6 +847,10 @@ checked."
   (let ((json-object-type 'plist)
         json-data)
     (let ((url-proxy-services nil)
+          (setenv "ALL_PROXY")
+          (setenv "SOCKS_PROXY")
+          (setenv "HTTP_PROXY")
+          (setenv "HTTPS_PROXY")
           (url-request-method "GET")
           (url-mime-accept-string "application/citeproc+json"))
       (with-current-buffer
