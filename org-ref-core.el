@@ -249,6 +249,8 @@ function in `org-ref-completion-library'."
     (define-key map (kbd "S-<left>") (lambda () (interactive) (org-ref-swap-citation-link -1)))
     (define-key map (kbd "S-<right>") (lambda () (interactive) (org-ref-swap-citation-link 1)))
     (define-key map (kbd "S-<up>") 'org-ref-sort-citation-link)
+    (define-key map (kbd "<tab>") (lambda () (interactive)
+				    (funcall org-ref-insert-cite-function)))
     map)
   "Keymap for cite links."
   :type 'symbol
@@ -496,6 +498,83 @@ have fields sorted alphabetically."
   "If non-nil show bad org-ref links in a warning face."
   :type 'boolean
   :group 'org-ref)
+
+
+(defcustom org-ref-enable-colon-insert nil
+  "If non-nil enable colon to insert cites, labels, and ref links."
+  :type 'booleanp
+  :group 'org-ref)
+
+
+(defun org-ref-colon-insert-link (arg)
+  "Function to run when : has a special meaning.
+See `org-ref-enable-colon-insert'."
+  (interactive "P")
+  (insert ":")
+  (cond
+   ;; cite links
+   ((save-excursion
+      (backward-word 1)
+      (looking-at (regexp-opt org-ref-cite-types)))
+    (funcall org-ref-insert-cite-function))
+   ((save-excursion
+      (backward-word 1)
+      (looking-at "label:"))
+    (funcall org-ref-insert-label-function))
+   ((save-excursion
+      (backward-word 1)
+      (looking-at (regexp-opt org-ref-ref-types)))
+    (funcall org-ref-insert-ref-function))))
+
+
+(when org-ref-enable-colon-insert
+  (define-key org-mode-map ":"
+    '(menu-item "maybe-cite" nil
+		:filter (lambda (&optional _)
+                          (unless (org-in-src-block-p)
+			    #'org-ref-colon-insert-link)))))
+
+
+(defun org-ref-change-cite-type (new-type)
+  "Change the cite type to NEW-TYPE."
+  (interactive (list (completing-read "Type: " org-ref-cite-types)))
+  (let* ((cite-link (org-element-context))
+	 (old-type (org-element-property :type cite-link))
+	 (begin (org-element-property :begin cite-link))
+	 (end (org-element-property :end cite-link))
+	 (bracketp (eq 'bracket (org-element-property :format cite-link)))
+	 (path (org-element-property :path cite-link))
+	 (deltap (- (point) begin)))
+    ;; note this does not respect brackets
+    (setf (buffer-substring begin end)
+	  (concat
+	   (if bracketp "[[" "")
+	   new-type ":" path
+	   (if bracketp "]]" "")))
+    ;; try to preserve the character the point is on.
+    (goto-char (+ begin deltap (- (length new-type) (length old-type))))))
+
+
+
+(defun org-ref-change-ref-type (new-type)
+  "Change the ref type to NEW-TYPE."
+  (interactive (list (completing-read "Type: " org-ref-ref-types)))
+  (let* ((cite-link (org-element-context))
+	 (old-type (org-element-property :type cite-link))
+	 (begin (org-element-property :begin cite-link))
+	 (end (org-element-property :end cite-link))
+	 (bracketp (eq 'bracket (org-element-property :format cite-link)))
+	 (path (org-element-property :path cite-link))
+	 (deltap (- (point) begin)))
+    ;; note this does not respect brackets
+    (setf (buffer-substring begin end)
+	  (concat
+	   (if bracketp "[[" "")
+	   new-type ":" path
+	   (if bracketp "]]" "")))
+    ;; try to preserve the character the point is on.
+    (goto-char (+ begin deltap (- (length new-type) (length old-type))))))
+
 
 ;;* Messages for link at cursor
 
@@ -1649,11 +1728,11 @@ Stores a list of strings.")
     ;; CUSTOM_ID in a heading
     ":CUSTOM_ID:\\s-+\\(?1:[+a-zA-Z0-9:\\._-]*\\)\\_>"
     ;; #+name
-    "^#\\+name:\\s-+\\(?1:[+a-zA-Z0-9:\\._-]*\\)\\_>"
+    "^\\s-*#\\+name:\\s-+\\(?1:[+a-zA-Z0-9:\\._-]*\\)\\_>"
     ;; radio targets
     "<<\\(?1:[+a-zA-Z0-9:\\._-]*\\)>>"
     ;; #+tblname:
-    "^#\\+tblname:\\s-+\\(?1:[+a-zA-Z0-9:\\._-]*\\)\\_>"
+    "^\\s-*#\\+tblname:\\s-+\\(?1:[+a-zA-Z0-9:\\._-]*\\)\\_>"
     ;; label links
     "label:\\(?1:[+a-zA-Z0-9:\\._-]*\\)"
     ;; labels in latex
@@ -2427,7 +2506,7 @@ citez link, with reftex key of z, and the completion function."
    `(if (fboundp 'org-link-set-parameters)
 	(org-link-set-parameters
 	 ,type
-	 :follow (lambda (_) (funcall org-ref-cite-onclick-function nil))
+	 :follow (lambda (_) (funcall org-ref-cite-onclick-function))
 	 :export (quote ,(intern (format "org-ref-format-%s" type)))
 	 :complete (quote ,(intern (format "org-%s-complete-link" type)))
 	 :help-echo (lambda (window object position)
@@ -3888,6 +3967,14 @@ point. Leaves point at end of added keys."
 		 (mapconcat 'identity newkeys ",")
 		 (when bracket-p "]]")
 		 trailing-space)))
+     ;; Looking back at a link beginning that a user has typed in
+     ((save-excursion
+	(backward-word 1)
+	(looking-at (regexp-opt org-ref-cite-types)))
+      (setq begin (point)
+	    end (point)
+	    newkeys keys
+	    new-cite (mapconcat 'identity keys ",")))
      ;; a new cite
      (t
       (setq
@@ -3903,7 +3990,8 @@ point. Leaves point at end of added keys."
 		 (mapconcat 'identity newkeys ",")
 		 (when bracket-p "]]")
 		 trailing-space))))
-
+    ;; post link processing after all the variables habe been defined for each
+    ;; case
     (delete-region begin end)
     (goto-char begin)
     (insert new-cite)

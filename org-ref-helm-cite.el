@@ -710,7 +710,7 @@ Checks for pdf and doi, and add appropriate functions."
              collect (cons (format "%2s. %s" i (car cell))
                            (cdr cell)))))
 
-(defun org-ref-helm-cite-click (_key)
+(defun org-ref-helm-cite-click ()
   "Open helm for actions on a cite link.
 subtle points.
 

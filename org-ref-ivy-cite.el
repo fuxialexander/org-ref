@@ -35,6 +35,21 @@
 (require 'ivy-bibtex)
 (require 'bibtex-completion)
 
+;; This lets you customize how the completion for ivy is displayed. The default
+;; is in the minibuffer. You may like to see something more like a popup though.
+(defcustom org-ref-ivy-display-function nil
+  "ivy function to display completion with.
+Set to `ivy-display-function-overlay' to get popups at point")
+
+(when org-ref-ivy-display-function
+  (add-to-list 'ivy-display-functions-alist
+	       `(org-ref-ivy-insert-cite-link . ,org-ref-ivy-display-function))
+  (add-to-list 'ivy-display-functions-alist
+	       `(org-ref-ivy-insert-label-link . ,org-ref-ivy-display-function))
+  (add-to-list 'ivy-display-functions-alist
+	       `(org-ref-ivy-insert-ref-link . ,org-ref-ivy-display-function)))
+
+
 (defvar org-ref-cite-types)
 (defvar org-ref-show-citation-on-enter)
 
@@ -501,7 +516,7 @@ prefix ARG is used, which uses `org-ref-default-bibliography'."
   "Insert a label with ivy."
   (interactive)
   (insert
-   (concat "label:"
+   (concat (if (not (looking-back "label:" 6)) "label:" "")
 	   (ivy-read "label: " (org-ref-get-labels)))))
 
 
@@ -510,13 +525,23 @@ prefix ARG is used, which uses `org-ref-default-bibliography'."
 Use a prefix arg to select the ref type."
   (interactive)
   (let ((label (ivy-read "label: " (org-ref-get-labels) :require-match t)))
-    (insert
-     (or (when (looking-at "$") " ") "")
-     (concat (if ivy-current-prefix-arg
-		 (ivy-read "type: " org-ref-ref-types)
-	       org-ref-default-ref-type)
-	     ":"
-	     label))))
+    (cond
+     ;; from a colon insert
+     ((looking-back ":" 1)
+      (insert label))
+     ;; non-default
+     (ivy-current-prefix-arg
+      (insert
+       (ivy-read "type: " org-ref-ref-types)
+       ":"
+       label))
+     ;; default
+     (t
+      (insert
+       (or (when (looking-at "$") " ") "")
+       (concat org-ref-default-ref-type
+	       ":"
+	       label))))))
 
 
 (require 'hydra)
@@ -528,60 +553,33 @@ _p_: Open pdf     _w_: WOS          _g_: Google Scholar _K_: Copy citation to cl
 _u_: Open url     _r_: WOS related  _P_: Pubmed         _k_: Copy key to clipboard
 _n_: Open notes   _c_: WOS citing   _C_: Crossref       _f_: Copy formatted entry
 _o_: Open entry   _e_: Email entry  ^ ^                 _q_: quit
+_i_: Insert cite  _h_: change type
 "
-    ("o" org-ref-open-citation-at-point)
-    ("p" org-ref-open-pdf-at-point)
-    ("n" org-ref-open-notes-at-point)
-    ("u" org-ref-open-url-at-point)
-    ("w" org-ref-wos-at-point)
-    ("r" org-ref-wos-related-at-point)
-    ("c" org-ref-wos-citing-at-point)
-    ("g" org-ref-google-scholar-at-point)
-    ("P" org-ref-pubmed-at-point)
-    ("C" org-ref-crossref-at-point)
-    ("K" org-ref-copy-entry-as-summary)
-    ("k" (progn
-           (kill-new
-            (car (org-ref-get-bibtex-key-and-file)))))
-    ("f" (kill-new
-          (bibtex-completion-apa-format-reference (org-ref-get-bibtex-key-under-cursor))))
-    ("e" (kill-new (save-excursion
-                     (org-ref-open-citation-at-point)
-                     (org-ref-email-bibtex-entry))))
-    ("q" nil))
+  ("o" org-ref-open-citation-at-point nil)
+  ("p" org-ref-open-pdf-at-point nil)
+  ("n" org-ref-open-notes-at-point nil)
+  ("u" org-ref-open-url-at-point nil)
+  ("w" org-ref-wos-at-point nil)
+  ("r" org-ref-wos-related-at-point nil)
+  ("c" org-ref-wos-citing-at-point nil)
+  ("g" org-ref-google-scholar-at-point nil)
+  ("P" org-ref-pubmed-at-point nil)
+  ("C" org-ref-crossref-at-point nil)
+  ("k" (progn
+         (kill-new
+          (car (org-ref-get-bibtex-key-and-file))))
+   nil)
+  ("f" (kill-new
+        (org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
+   nil)
 
-;; (defhydra org-ref-cite-hydra (:color blue)
-;;   "
-;; _p_: Open pdf     _w_: WOS          _g_: Google Scholar _K_: Copy citation to clipboard
-;; _u_: Open url     _r_: WOS related  _P_: Pubmed         _k_: Copy key to clipboard
-;; _n_: Open notes   _c_: WOS citing   _C_: Crossref       _f_: Copy formatted entry
-;; _o_: Open entry   _e_: Email entry  ^ ^                 _q_: quit
-;; "
-;;   ("o" org-ref-open-citation-at-point nil)
-;;   ("p" org-ref-open-pdf-at-point nil)
-;;   ("n" org-ref-open-notes-at-point nil)
-;;   ("u" org-ref-open-url-at-point nil)
-;;   ("w" org-ref-wos-at-point nil)
-;;   ("r" org-ref-wos-related-at-point nil)
-;;   ("c" org-ref-wos-citing-at-point nil)
-;;   ("g" org-ref-google-scholar-at-point nil)
-;;   ("P" org-ref-pubmed-at-point nil)
-;;   ("C" org-ref-crossref-at-point nil)
-;;   ("K" org-ref-copy-entry-as-summary nil)
-;;   ("k" (progn
-;; 	 (kill-new
-;; 	  (car (org-ref-get-bibtex-key-and-file))))
-;;    nil)
-;;   ("f" (kill-new
-;; 	(org-ref-format-entry (org-ref-get-bibtex-key-under-cursor)))
-;;    nil)
-
-;;   ("e" (kill-new (save-excursion
-;; 		   (org-ref-open-citation-at-point)
-;; 		   (org-ref-email-bibtex-entry)))
-;;    nil)
-;;   ("q" nil))
-
+  ("e" (kill-new (save-excursion
+                   (org-ref-open-citation-at-point)
+                   (org-ref-email-bibtex-entry)))
+   nil)
+  ("i" (funcall org-ref-insert-cite-function))
+  ("h" org-ref-change-cite-type)
+  ("q" nil))
 
 
 (defun org-ref-ivy-onclick-actions ()
