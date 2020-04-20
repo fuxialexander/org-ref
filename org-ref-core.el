@@ -3304,7 +3304,6 @@ for the % is defined by `orcb-%-replacement-string'."
         (key (funcall
               org-ref-clean-bibtex-key-function
               (bibtex-generate-autokey))))
-=======
 (defun orcb-key (&optional allow-duplicate-keys)
   "Replace the key in the entry.
 Prompts for replacement if the new key duplicates one already in
@@ -3313,7 +3312,6 @@ the file, unless ALLOW-DUPLICATE-KEYS is non-nil."
 		      (bibtex-generate-autokey))))
     ;; remove any \\ in the key
     (setq key (replace-regexp-in-string "\\\\" "" key))
->>>>>>> 4cde03aea938c5b0b19ef591e6209047f06e04d6
     ;; first we delete the existing key
     (if pdf
         (mapcar
@@ -3338,14 +3336,9 @@ the file, unless ALLOW-DUPLICATE-KEYS is non-nil."
           bibtex-key-in-head)
          (match-end bibtex-key-in-head)))
     ;; check if the key is in the buffer
-<<<<<<< HEAD
-    (when (save-excursion
-            (bibtex-search-entry key))
-=======
     (when (and (not allow-duplicate-keys)
                (save-excursion
                  (bibtex-search-entry key)))
->>>>>>> 4cde03aea938c5b0b19ef591e6209047f06e04d6
       (save-excursion
         (bibtex-search-entry key)
         (bibtex-copy-entry-as-kill)
