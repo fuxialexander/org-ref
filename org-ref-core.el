@@ -35,7 +35,6 @@
 (require 'htmlize)
 (require 's)
 (require 'doi-utils)
-(require 'org-ref-url-utils)
 
 (add-to-list 'load-path
 	     (expand-file-name
@@ -472,7 +471,7 @@ users may be interested in adding themselves."
 
 
 (defcustom org-ref-bibtex-sort-order
-  '(("article"  . ("author" "title" "journaltitle" "journal" "volume" "number" "pages" "year" "doi" "url"))
+  '(("article"  . ("author" "title" "journal" "volume" "number" "pages" "year" "doi" "url"))
     ("inproceedings" . ("author" "title" "booktitle" "year" "volume" "number" "pages" "doi" "url"))
     ("book" . ("author" "title" "year" "publisher" "url")))
   "A-list of bibtex entry fields and the order to sort an entry with.
@@ -2391,7 +2390,6 @@ creates a cite link."
        :title (or (cdr (assoc "title" entry)) "[no title]")
        :booktitle (or (cdr (assoc "booktitle" entry)) "[no booktitle]")
        :journal (or (cdr (assoc "journal" entry)) "[no journal]")
-       :journaltitle (or (cdr (assoc "journaltitle" entry)) "[no journal]")
        :publisher (or (cdr (assoc "publisher" entry)) "[no publisher]")
        :pages (or (cdr (assoc "pages" entry)) "[no pages]")
        :url (or (cdr (assoc "url" entry)) "[no url]")
@@ -2483,7 +2481,7 @@ citez link, with reftex key of z, and the completion function."
    `(if (fboundp 'org-link-set-parameters)
 	(org-link-set-parameters
 	 ,type
-	 :follow (lambda (_) (funcall org-ref-cite-onclick-function))
+	 :follow (lambda (_) (funcall org-ref-cite-onclick-function nil))
 	 :export (quote ,(intern (format "org-ref-format-%s" type)))
 	 :complete (quote ,(intern (format "org-%s-complete-link" type)))
 	 :help-echo (lambda (window object position)
@@ -2637,10 +2635,6 @@ PATH is required for the org-link, but it does nothing here."
 
 ;;* Utilities
 ;;** create text citations from a bibtex entry
-;; (defun org-ref-bib-citation ()
-;;   "From a bibtex entry, create and return a citation string."
-;;   (bibtex-completion-apa-format-reference
-;;    (org-ref-get-bibtex-key-under-cursor)))
 
 (defun org-ref-bib-citation ()
   "From a bibtex entry, create and return a citation string.
@@ -3273,37 +3267,6 @@ for the % is defined by `orcb-%-replacement-string'."
     (insert ",")))
 
 
-<<<<<<< HEAD
-;; (defun orcb-key ()
-;;   "Replace the key in the entry."
-;;   (let ((key (funcall org-ref-clean-bibtex-key-function
-;; 		      (bibtex-generate-autokey))))
-;;     ;; first we delete the existing key
-;;     (bibtex-beginning-of-entry)
-;;     (re-search-forward bibtex-entry-maybe-empty-head)
-;;     (if (match-beginning bibtex-key-in-head)
-;; 	(delete-region (match-beginning bibtex-key-in-head)
-;; 		       (match-end bibtex-key-in-head)))
-;;     ;; check if the key is in the buffer
-;;     (when (save-excursion
-;; 	    (bibtex-search-entry key))
-;;       (save-excursion
-;; 	(bibtex-search-entry key)
-;; 	(bibtex-copy-entry-as-kill)
-;; 	(switch-to-buffer-other-window "*duplicate entry*")
-;; 	(bibtex-yank))
-;;       (setq key (bibtex-read-key "Duplicate Key found, edit: " key)))
-
-;;     (insert key)
-;;     (kill-new key)))
-(defun orcb-key ()
-  "Replace the key in the entry."
-  (let ((oldkey (bibtex-completion-key-at-point))
-        (pdf (bibtex-completion-find-pdf
-              (bibtex-completion-key-at-point)))
-        (key (funcall
-              org-ref-clean-bibtex-key-function
-              (bibtex-generate-autokey))))
 (defun orcb-key (&optional allow-duplicate-keys)
   "Replace the key in the entry.
 Prompts for replacement if the new key duplicates one already in
@@ -3313,44 +3276,25 @@ the file, unless ALLOW-DUPLICATE-KEYS is non-nil."
     ;; remove any \\ in the key
     (setq key (replace-regexp-in-string "\\\\" "" key))
     ;; first we delete the existing key
-    (if pdf
-        (mapcar
-         #'(lambda (x)
-             (condition-case nil
-                 (rename-file
-                  x
-                  (downcase
-                   (replace-regexp-in-string
-                    oldkey
-                    key
-                    x)))
-               (error t)))
-         pdf))
     (bibtex-beginning-of-entry)
-    (re-search-forward
-     bibtex-entry-maybe-empty-head)
-    (if (match-beginning
-         bibtex-key-in-head)
-        (delete-region
-         (match-beginning
-          bibtex-key-in-head)
-         (match-end bibtex-key-in-head)))
+    (re-search-forward bibtex-entry-maybe-empty-head)
+    (if (match-beginning bibtex-key-in-head)
+	(delete-region (match-beginning bibtex-key-in-head)
+		       (match-end bibtex-key-in-head)))
     ;; check if the key is in the buffer
     (when (and (not allow-duplicate-keys)
                (save-excursion
                  (bibtex-search-entry key)))
       (save-excursion
-        (bibtex-search-entry key)
-        (bibtex-copy-entry-as-kill)
-        (switch-to-buffer-other-window
-         "*duplicate entry*")
-        (bibtex-yank))
-      (setq key
-            (bibtex-read-key
-             "Duplicate Key found, edit: "
-             key)))
+	(bibtex-search-entry key)
+	(bibtex-copy-entry-as-kill)
+	(switch-to-buffer-other-window "*duplicate entry*")
+	(bibtex-yank))
+      (setq key (bibtex-read-key "Duplicate Key found, edit: " key)))
+
     (insert key)
     (kill-new key)))
+
 
 (defun orcb-check-journal ()
   "Check entry at point to see if journal exists in `org-ref-bibtex-journal-abbreviations'.
@@ -3363,7 +3307,7 @@ If not, issue a warning."
     (save-excursion
       (bibtex-beginning-of-entry)
       (let* ((entry (bibtex-parse-entry t))
-             (journal (or (reftex-get-bib-field "journaltitle" entry) (reftex-get-bib-field "journal" entry))))
+             (journal (reftex-get-bib-field "journal" entry)))
         (when (null journal)
           (error "Unable to get journal for this entry."))
         (unless (member journal (-flatten org-ref-bibtex-journal-abbreviations))
