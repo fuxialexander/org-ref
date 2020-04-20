@@ -31,6 +31,8 @@
 (require 'org)
 (require 's)
 (require 'org-ref-utils)
+(require 'parsebib)
+
 
 ;; This is a local variable defined in `url-http'.  We need it to avoid
 ;; byte-compiler errors.
@@ -218,7 +220,7 @@ key."
                        (match-end bibtex-key-in-head)))
             ;; remove potentially troublesome characters from key
             ;; as it will be used as  a filename
-            (setq key (replace-regexp-in-string   "\"\\|\\*\\|/\\|:\\|<\\|>\\|\\?\\|\\\\\\||\\|\\+\\|,\\|\\.\\|;\\|=\\|\\[\\|]\\|:\\|!\\|@"
+            (setq key (replace-regexp-in-string   "\"\\|\\*\\|/\\|:\\|<\\|>\\|\\?\\|\\\\\\||\\|\\+\\|,\\|\\.\\|;\\|=\\|\\[\\|]\\|!\\|@"
                                                   "" key))
             ;; check if the key is in the buffer
             (when (save-excursion

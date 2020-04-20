@@ -506,6 +506,12 @@ have fields sorted alphabetically."
   :group 'org-ref)
 
 
+(defcustom org-ref-label-use-font-lock t
+  "If non-nil use font-lock to find labels in the buffer.
+If nil, each time you ask for labels the whole buffer will be
+searched, which may be slower.")
+
+
 (defun org-ref-colon-insert-link (arg)
   "Function to run when : has a special meaning.
 See `org-ref-enable-colon-insert'."
@@ -718,21 +724,21 @@ If so return the position for `goto-char'."
 (defvar org-ref-cite-re
   (concat "\\(" (mapconcat
                  (lambda (x)
-		   (replace-regexp-in-string "\*" "\\\\*" x))
+		   (replace-regexp-in-string "\\*" "\\\\*" x))
                  org-ref-cite-types "\\|") "\\):"
-                 "\\([a-zA-Z0-9-_:\\./]+,?\\)+")
+                 "\\([a-zA-Z0-9_:\\./-]+,?\\)+")
   "Regexp for cite links.
 Group 1 contains the cite type.
 Group 2 contains the keys.")
 
 
 (defvar org-ref-label-re
-  "label:\\([a-zA-Z0-9-_:]+,?\\)+"
+  "label:\\([a-zA-Z0-9_:-]+,?\\)+"
   "Regexp for label links.")
 
 
 (defvar org-ref-ref-re
-  "\\(eq\\)?ref:\\([a-zA-Z0-9-_:]+,?\\)+"
+  "\\(eq\\)?ref:\\([a-zA-Z0-9_:-]+,?\\)+"
   "Regexp for ref links.")
 
 
@@ -1333,7 +1339,7 @@ Ignore figures in COMMENTED sections."
 		(when
 		    (and (string= (org-element-property :type link) "file")
 			 (string-match-p
-			  "[^.]*\\.\\(png\\|jpg\\|eps\\|pdf\\)$"
+			  "[^.]*\\.\\(png\\|jpg\\|eps\\|pdf\\|svg\\)$"
 			  (org-element-property :path link))
 			 ;; ignore commented sections
 			 (save-excursion
@@ -1736,7 +1742,7 @@ Stores a list of strings.")
     ;; label links
     "label:\\(?1:[+a-zA-Z0-9:\\._-]*\\)"
     ;; labels in latex
-    "\\label{\\(?1:[+a-zA-Z0-9:\\._-]*\\)}")
+    "\\\\label{\\(?1:[+a-zA-Z0-9:\\._-]*\\)}")
   "List of regexps that are labels in org-ref.")
 
 
@@ -1776,9 +1782,11 @@ seems to work fine at recognizing labels by the regexps in
 		       (put-text-property (match-beginning 1)
 					  (match-end 1)
 					  'rear-nonsticky '(org-ref-label)))
-		     (when org-ref-label-debug (message "oral: adding %s" label))
-		     (push label
-			   org-ref-labels)
+		     (when org-ref-label-debug
+		       (message "oral: adding %s" label))
+
+		     (pushnew label
+			      org-ref-labels :test 'string=)
 		     ;; now store the last end so we can tell for the next run
 		     ;; if we are adding to a label.
 		     (setq org-ref-last-label-end end))))))))
@@ -1883,41 +1891,10 @@ to keep them sorted.
 
 If the `org-ref-labels' variable is empty, we try scanning the
 whole buffer for them."
-  (when (null org-ref-labels)
+  (when (or (null org-ref-labels) (null org-ref-label-use-font-lock))
     (save-excursion
       (org-ref-add-labels (point-min) (point-max))))
   (reverse org-ref-labels))
-
-
-;; (defun org-ref-get-labels ()
-;;   "Return a list of labels in the buffer that you can make a ref link to.
-;; This is used to complete ref links."
-;;   (save-excursion
-;;     (save-restriction
-;;       (widen)
-;;       (goto-char (point-min))
-;;       (let ((matches '()))
-;;         ;; these are the org-ref label:stuff  kinds
-;;         (while (re-search-forward
-;;                 "[^#+]label:\\([a-zA-Z0-9:\\._-]*\\)\\_>" (point-max) t)
-;; 	  (setq matches (append matches
-;; 				(list
-;; 				 (match-string-no-properties 1)))))
-;;         ;; now add all the other kinds of labels.
-;;         (append matches
-;; 		;; #+label:
-;; 		(org-ref-get-org-labels)
-;; 		;; \label{}
-;; 		(org-ref-get-latex-labels)
-;; 		;; #+tblname: and actually #+label
-;; 		(org-ref-get-tblnames)
-;; 		;; CUSTOM_IDs
-;; 		(org-ref-get-custom-ids)
-;; 		;; names
-;; 		(org-ref-get-names)
-;; 		;; radio targets
-;; 		(org-element-map (org-ref-parse-buffer) 'target
-;; 		  (lambda (tg) (org-element-property :value tg))))))))
 
 
 ;;;###autoload
@@ -2139,7 +2116,7 @@ properties."
 		    bibtex-key)))
 	    ;; point is on the link description, assume we want the
 	    ;; last key
-	    (let ((last-key (replace-regexp-in-string "[a-zA-Z0-9-_]*," "" link-string)))
+	    (let ((last-key (replace-regexp-in-string "[a-zA-Z0-9_-]*," "" link-string)))
 	      last-key))
 	;; link with description. assume only one key
 	link-string))))
@@ -2191,7 +2168,7 @@ set in `org-ref-default-bibliography'"
         ;; many.
         (goto-char (point-min))
         (while (re-search-forward
-                "\\\\addbibresource{\\(.*\\)?}"
+                "\\\\addbibresource{\\(.*\\)}"
                 nil t)
           (push (match-string 1) org-ref-bibliography-files))
 
@@ -2694,66 +2671,25 @@ the entry of interest in the bibfile.  but does not check that."
           (org-open-link-from-string (format "[[file:%s]]" pdf))
         (ding)))))
 
-(defun org-ref-notes-function-one-file (thekey)
-  "Function to open note belonging to THEKEY.
 
+(defun org-ref-notes-function-one-file (key)
+  "Function to open note belonging to KEY.
  Set `org-ref-notes-function' to this function if you use one
 long file with headlines for each entry."
-  (let*
-      ((results
-        (org-ref-get-bibtex-key-and-file thekey))
-       (key
-        (car results))
-       (bibfile
-        (cdr results)))
-    (with-temp-buffer
-      (insert-file-contents bibfile)
-      (bibtex-set-dialect
-       (parsebib-find-bibtex-dialect)
-       t)
-      (bibtex-search-entry key)
-      (org-ref-open-bibtex-notes))))
+  ;; save key to clipboard to make saving pdf later easier by pasting.
+  (with-temp-buffer
+    (insert key)
+    (kill-ring-save (point-min) (point-max)))
+  (let ((entry (with-temp-buffer
+		 (insert (org-ref-get-bibtex-entry key))
+		 (bibtex-mode)
+		 (bibtex-beginning-of-entry)
+		 (bibtex-parse-entry)) ))
 
-(defun org-ref-notes-function-many-files (thekey)
-  "Function to open note belonging to THEKEY.
-
-Set `org-ref-notes-function' to this function if you use one file
-for each bib entry."
-  (let ((bibtex-completion-bibliography (org-ref-find-bibliography)))
-    (bibtex-completion-edit-notes
-     (list (car (org-ref-get-bibtex-key-and-file thekey))))))
-
-;;** Open notes from bibtex entry
-;;;###autoload
-(defun org-ref-open-bibtex-notes ()
-  "From a bibtex entry, open the notes if they exist.
-If the notes do not exist, then create a heading.
-
-I never did figure out how to use reftex to make this happen
-non-interactively.  the `reftex-format-citation' function did not
-work perfectly; there were carriage returns in the strings, and
-it did not put the key where it needed to be.  so, below I replace
-the carriage returns and extra spaces with a single space and
-construct the heading by hand."
-  (interactive)
-
-  (bibtex-beginning-of-entry)
-  (let* ((cb (current-buffer))
-         (bibtex-expand-strings t)
-         (entry (cl-loop for (key . value) in (bibtex-parse-entry t)
-                         collect (cons (downcase key) (s-collapse-whitespace value))))
-         (key (reftex-get-bib-field "=key=" entry)))
-
-    ;; save key to clipboard to make saving pdf later easier by pasting.
-    (with-temp-buffer
-      (insert key)
-      (kill-ring-save (point-min) (point-max)))
-
-    ;; now look for entry in the notes file
     (save-restriction
       (if  org-ref-bibliography-notes
-          (find-file-other-window org-ref-bibliography-notes)
-        (error "Org-ref-bib-bibliography-notes is not set to anything"))
+	  (find-file-other-window org-ref-bibliography-notes)
+	(error "org-ref-bibliography-notes is not set to anything"))
 
       (widen)
       (goto-char (point-min))
@@ -2763,8 +2699,8 @@ construct the heading by hand."
 	     (keys (mapcar
 		    (lambda (hl) (org-element-property :CUSTOM_ID hl))
 		    headlines)))
-	;; put new entry in notes if we don't find it.
 	(if (-contains? keys key)
+	    ;; we have it so we go to it.
 	    (progn
 	      (org-open-link-from-string (format "[[#%s]]" key))
 	      (funcall org-ref-open-notes-function))
@@ -2772,12 +2708,30 @@ construct the heading by hand."
 	  (goto-char (point-max))
 	  (insert (org-ref-reftex-format-citation
 		   entry (concat "\n" org-ref-note-title-format)))
-	  (mapc (lambda (x)
-		  (save-restriction
-		    (save-excursion
-		      (funcall x))))
-		org-ref-create-notes-hook)
 	  (save-buffer))))))
+
+
+(defun org-ref-notes-function-many-files (thekey)
+  "Function to open note belonging to THEKEY.
+Set `org-ref-notes-function' to this function if you use one file
+for each bib entry."
+  (let ((bibtex-completion-bibliography (org-ref-find-bibliography)))
+    (bibtex-completion-edit-notes
+     (list (car (org-ref-get-bibtex-key-and-file thekey))))))
+
+;;** Open notes from bibtex entry
+;;;###autoload
+(defun org-ref-open-bibtex-notes ()
+  "From a bibtex entry, open the notes if they exist."
+  (interactive)
+  (bibtex-beginning-of-entry)
+  (let* ((cb (current-buffer))
+         (bibtex-expand-strings t)
+         (entry (cl-loop for (key . value) in (bibtex-parse-entry t)
+                         collect (cons (downcase key) (s-collapse-whitespace value))))
+         (key (reftex-get-bib-field "=key=" entry)))
+
+    (funcall org-ref-notes-function key)))
 
 
 ;;** Open bibtex entry in browser
@@ -2983,7 +2937,7 @@ file.  Makes a new buffer with clickable links."
   (let* ((cp (point))			; save to return to later
          (bibtex-files (cl-loop for f in (org-ref-find-bibliography)
 				if (file-exists-p f)
-				collect f))
+				collect (file-truename f)))
          (bibtex-file-path (mapconcat
                             (lambda (x)
                               (file-name-directory (file-truename x)))
@@ -3040,54 +2994,49 @@ file.  Makes a new buffer with clickable links."
   "Return a list of labels where label is multiply defined."
   (let ((labels (org-ref-get-labels))
         (multiple-labels '()))
-    (when (not (= (length labels)
-                  (length (-uniq labels))))
-      (dolist (label labels)
-        (when (> (-count (lambda (a)
-                           (equal a label))
-                         labels)
-		 1)
-          ;; this means there are multiply defined labels. now we find them.
-          (let ((cp (point)))
-            (goto-char (point-min))
-	    ;; regular org label:tag links
-            (while (re-search-forward
-                    (format  "[^#+]label:%s\\s-" label) nil t)
-              (cl-pushnew (cons label (point-marker)) multiple-labels
-			  :test (lambda (a b)
-				  (and (string= (car a) (car b))
-				       (= (marker-position (cdr a))
-					  (marker-position (cdr b)))))))
+    ;; labels should be a unique list.
+    (dolist (label labels)
+      (when (> (org-ref-count-labels label) 1)
+	(let ((cp (point)))
+          (goto-char (point-min))
+	  ;; regular org label:tag links
+          (while (re-search-forward
+                  (format  "[^#+]label:%s\\s-" label) nil t)
+            (cl-pushnew (cons label (point-marker)) multiple-labels
+			:test (lambda (a b)
+				(and (string= (car a) (car b))
+				     (= (marker-position (cdr a))
+					(marker-position (cdr b)))))))
 
-            (goto-char (point-min))
-	    ;; latex style
-            (while (re-search-forward
-                    (format  "\\label{%s}\\s-?" label) nil t)
-              (cl-pushnew (cons label (point-marker)) multiple-labels
-			  :test (lambda (a b)
-				  (and (string= (car a) (car b))
-				       (= (marker-position (cdr a))
-					  (marker-position (cdr b)))))))
+          (goto-char (point-min))
+	  ;; latex style
+          (while (re-search-forward
+                  (format  "\\label{%s}\\s-?" label) nil t)
+            (cl-pushnew (cons label (point-marker)) multiple-labels
+			:test (lambda (a b)
+				(and (string= (car a) (car b))
+				     (= (marker-position (cdr a))
+					(marker-position (cdr b)))))))
 
-	    ;; keyword style
-            (goto-char (point-min))
-            (while (re-search-forward
-                    (format  "^\\( \\)*#\\+label:\\s-*%s" label) nil t)
-              (cl-pushnew (cons label (point-marker)) multiple-labels
-			  :test (lambda (a b)
-				  (and (string= (car a) (car b))
-				       (= (marker-position (cdr a))
-					  (marker-position (cdr b)))))))
+	  ;; keyword style
+          (goto-char (point-min))
+          (while (re-search-forward
+                  (format  "^\\( \\)*#\\+label:\\s-*%s" label) nil t)
+            (cl-pushnew (cons label (point-marker)) multiple-labels
+			:test (lambda (a b)
+				(and (string= (car a) (car b))
+				     (= (marker-position (cdr a))
+					(marker-position (cdr b)))))))
 
-            (goto-char (point-min))
-            (while (re-search-forward
-                    (format "^\\( \\)*#\\+tblname:\\s-*%s" label) nil t)
-              (cl-pushnew (cons label (point-marker)) multiple-labels
-			  :test (lambda (a b)
-				  (and (string= (car a) (car b))
-				       (= (marker-position (cdr a))
-					  (marker-position (cdr b)))))))
-            (goto-char cp)))))
+          (goto-char (point-min))
+          (while (re-search-forward
+                  (format "^\\( \\)*#\\+tblname:\\s-*%s" label) nil t)
+            (cl-pushnew (cons label (point-marker)) multiple-labels
+			:test (lambda (a b)
+				(and (string= (car a) (car b))
+				     (= (marker-position (cdr a))
+					(marker-position (cdr b)))))))
+          (goto-char cp))))
     multiple-labels))
 
 
@@ -3109,7 +3058,7 @@ file.  Makes a new buffer with clickable links."
     ;; Let us also check \attachfile{fname}
     (save-excursion
       (goto-char (point-min))
-      (while (re-search-forward "\\attachfile{\\([^}]*\\)}" nil t)
+      (while (re-search-forward "\\\\attachfile{\\([^}]*\\)}" nil t)
         (unless (file-exists-p (match-string 1))
           (add-to-list 'bad-files (cons (match-string 1) (point-marker))))))
     bad-files))
@@ -3135,8 +3084,8 @@ file.  Makes a new buffer with clickable links."
          (other-fields)
          (type (cdr (assoc "=type=" entry)))
          (key (cdr (assoc "=key=" entry)))
-	     (field-order (cdr (assoc (if type (downcase type))
-				                  org-ref-bibtex-sort-order))))
+	 (field-order (cdr (assoc (if type (downcase type))
+				  org-ref-bibtex-sort-order))))
 
     ;; these are the fields we want to order that are in this entry
     (setq entry-fields (mapcar (lambda (x) (car x)) entry))
@@ -3146,28 +3095,28 @@ file.  Makes a new buffer with clickable links."
 
     ;;these are the other fields in the entry, and we sort them alphabetically.
     (setq other-fields
-	      (sort (-remove (lambda(x) (member x field-order)) entry-fields)
-		        'string<))
+	  (sort (-remove (lambda(x) (member x field-order)) entry-fields)
+		'string<))
 
     (save-restriction
       (bibtex-kill-entry)
       (insert
        (concat "@" type "{" key ",\n"
-	           (mapconcat
-	            (lambda (field)
-		          (when (member field entry-fields)
-		            (format "%s = %s,"
-			                field
-			                (cdr (assoc field entry)))))
-	            field-order "\n")
-	           ;; now add the other fields
-	           (mapconcat
-	            (lambda (field)
-		          (cl-loop for (f . v) in entry concat
-			               (when (string= f field)
-			                 (format "%s = %s,\n" f v))))
-	            (-uniq other-fields) "\n")
-	           "\n}"))
+	       (mapconcat
+	        (lambda (field)
+		  (when (member field entry-fields)
+		    (format "%s = %s,"
+			    field
+			    (cdr (assoc field entry)))))
+	        field-order "\n")
+	       ;; now add the other fields
+	       (mapconcat
+	        (lambda (field)
+		  (cl-loop for (f . v) in entry concat
+			   (when (string= f field)
+			     (format "%s = %s,\n" f v))))
+	        (-uniq other-fields) "\n")
+	       "\n}"))
       (bibtex-find-entry key)
       (bibtex-fill-entry)
       (bibtex-clean-entry))))
@@ -3293,13 +3242,24 @@ If optional NEW-YEAR set it to that, otherwise prompt for it."
       (replace-match " \\\\& "))))
 
 
+(defvar orcb-%-replacement-string " \\\\%"
+  "Replacement for a naked % sign in cleaning a BibTeX entry.
+The replacement string should be escaped for use with
+`replace-match'. Compare to the default value. Common choices
+would be to omit the space or to replace the space with a ~ for a
+non-breaking space.")
+
 (defun orcb-% ()
-  "Replace naked % with % in a bibtex entry."
+  "Replace naked % with % in a bibtex entry.
+Except when it is already escaped or in a URL. The replacement
+for the % is defined by `orcb-%-replacement-string'."
   (save-restriction
     (bibtex-narrow-to-entry)
     (bibtex-beginning-of-entry)
-    (while (re-search-forward "%" nil t)
-      (replace-match " \\\\%"))))
+    (while (re-search-forward "\\([^\\]\\)%\\([^[:xdigit:]]\\)" nil t)
+      (replace-match (concat "\\1"
+                             wt/orcb-%-replacement-string
+                             "\\2")))))
 
 
 (defun orcb-key-comma ()
@@ -3313,6 +3273,7 @@ If optional NEW-YEAR set it to that, otherwise prompt for it."
     (insert ",")))
 
 
+<<<<<<< HEAD
 ;; (defun orcb-key ()
 ;;   "Replace the key in the entry."
 ;;   (let ((key (funcall org-ref-clean-bibtex-key-function
@@ -3343,6 +3304,16 @@ If optional NEW-YEAR set it to that, otherwise prompt for it."
         (key (funcall
               org-ref-clean-bibtex-key-function
               (bibtex-generate-autokey))))
+=======
+(defun orcb-key (&optional allow-duplicate-keys)
+  "Replace the key in the entry.
+Prompts for replacement if the new key duplicates one already in
+the file, unless ALLOW-DUPLICATE-KEYS is non-nil."
+  (let ((key (funcall org-ref-clean-bibtex-key-function
+		      (bibtex-generate-autokey))))
+    ;; remove any \\ in the key
+    (setq key (replace-regexp-in-string "\\\\" "" key))
+>>>>>>> 4cde03aea938c5b0b19ef591e6209047f06e04d6
     ;; first we delete the existing key
     (if pdf
         (mapcar
@@ -3367,8 +3338,14 @@ If optional NEW-YEAR set it to that, otherwise prompt for it."
           bibtex-key-in-head)
          (match-end bibtex-key-in-head)))
     ;; check if the key is in the buffer
+<<<<<<< HEAD
     (when (save-excursion
             (bibtex-search-entry key))
+=======
+    (when (and (not allow-duplicate-keys)
+               (save-excursion
+                 (bibtex-search-entry key)))
+>>>>>>> 4cde03aea938c5b0b19ef591e6209047f06e04d6
       (save-excursion
         (bibtex-search-entry key)
         (bibtex-copy-entry-as-kill)
