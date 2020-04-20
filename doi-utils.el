@@ -47,6 +47,8 @@
 (declare-function reftex-get-bib-field "reftex-cite")
 (declare-function bibtex-completion-edit-notes "bibtex-completion")
 (declare-function helm "helm")
+(declare-function org-bibtex-yank "org-bibtex")
+(declare-function org-ref-possible-bibfiles "org-ref-core")
 
 (eval-when-compile
   (require 'cl-lib))
@@ -178,7 +180,7 @@ must return a pdf-url, or nil.")
 
 (defun aps-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://journals.aps.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s*\\)://journals.aps.org" *doi-utils-redirect*)
     (replace-regexp-in-string "/abstract/" "/pdf/" *doi-utils-redirect*)))
 
 
@@ -186,7 +188,7 @@ must return a pdf-url, or nil.")
 
 (defun science-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.sciencemag.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://www.sciencemag.org" *doi-utils-redirect*)
     (concat *doi-utils-redirect* ".full.pdf")))
 
 ;; ** BMC
@@ -248,12 +250,9 @@ REDIRECT-URL is where the pdf url will be in."
 
 (defun nature-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match
-         "^http://www.nature.com"
-         *doi-utils-redirect*)
-    (let ((result *doi-utils-redirect*))
-      ;; (setq result (replace-regexp-in-string "/full/" "/pdf/" result))
-      (concat result "\.pdf"))))
+  (when (string-match "^http\\(s?\\)://www.nature.com" *doi-utils-redirect*)
+    (concat *doi-utils-redirect* ".pdf")))
+
 
 ;;** Elsevier/ScienceDirect
 ;; You cannot compute these pdf links; they are embedded in the redirected pages.
@@ -291,23 +290,30 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun wiley-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://onlinelibrary.wiley.com" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://onlinelibrary.wiley.com" *doi-utils-redirect*)
     (doi-utils-get-wiley-pdf-url
      (replace-regexp-in-string "/abstract" "/pdf" *doi-utils-redirect*))
     *doi-utils-pdf-url*))
 
 
+(defun agu-pdf-url (*doi-utils-redirect*)
+  "Get url to the pdf from *DOI-UTILS-REDIRECT*."
+  (when (string-match "https://agupubs.onlinelibrary.wiley.com"
+		      *doi-utils-redirect*)
+    (replace-regexp-in-string "/full/" "/pdfdirect/" *doi-utils-redirect*)))
+
+
 ;;** Springer
 
 (defun springer-chapter-pdf-url (*doi-utils-redirect*)
-  (when (string-match "^http://link.springer.com/chapter/" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://link.springer.com/chapter/" *doi-utils-redirect*)
     (replace-regexp-in-string "/chapter" "/content/pdf"
 			      (concat *doi-utils-redirect* ".pdf"))))
 
 
 (defun springer-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://link.springer.com" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://link.springer.com" *doi-utils-redirect*)
     (replace-regexp-in-string "/article/" "/content/pdf/"
 			      (concat *doi-utils-redirect* ".pdf"))))
 
@@ -320,14 +326,14 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun acs-pdf-url-1 (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://pubs.acs.org/doi/abs/" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://pubs.acs.org/doi/abs/" *doi-utils-redirect*)
     (replace-regexp-in-string "/abs/" "/pdf/" *doi-utils-redirect*)))
 
 ;; 1/20/2016 I noticed this new pattern in pdf urls, where there is no abs in
 ;; the url
 (defun acs-pdf-url-2 (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://pubs.acs.org/doi/" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://pubs.acs.org/doi/" *doi-utils-redirect*)
     (replace-regexp-in-string "/doi/" "/doi/pdf/" *doi-utils-redirect*)))
 
 ;; 1/18/2019: It looks like they are using https now
@@ -341,14 +347,14 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun iop-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://iopscience.iop.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://iopscience.iop.org" *doi-utils-redirect*)
     (replace-regexp-in-string "/meta" "/pdf" *doi-utils-redirect*)))
 
 ;;** JSTOR
 
 (defun jstor-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.jstor.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://www.jstor.org" *doi-utils-redirect*)
     (concat (replace-regexp-in-string "/stable/" "/stable/pdfplus/" *doi-utils-redirect*) ".pdf")))
 
 
@@ -356,11 +362,11 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun aip-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://scitation.aip.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://scitation.aip.org" *doi-utils-redirect*)
     ;; get stuff after content
     (let (p1 p2 s p3)
       (setq p2 (replace-regexp-in-string
-                "^http://scitation.aip.org/" "" *doi-utils-redirect*))
+                "^http\\(s?\\)://scitation.aip.org/" "" *doi-utils-redirect*))
       (setq s (split-string p2 "/"))
       (setq p1 (mapconcat 'identity (-remove-at-indices '(0 6) s) "/"))
       (setq p3 (concat "/" (nth 0 s) (nth 1 s) "/" (nth 2 s) "/" (nth 3 s)))
@@ -371,14 +377,14 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun tandfonline-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.tandfonline.com" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://www.tandfonline.com" *doi-utils-redirect*)
     (replace-regexp-in-string "/abs/\\|/full/" "/pdf/" *doi-utils-redirect*)))
 
 ;;** ECS
 
 (defun ecs-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://jes.ecsdl.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://jes.ecsdl.org" *doi-utils-redirect*)
     (replace-regexp-in-string "\.abstract$" ".full.pdf" *doi-utils-redirect*)))
 
 ;; http://ecst.ecsdl.org/content/25/2/2769
@@ -387,7 +393,7 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun ecst-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://ecst.ecsdl.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://ecst.ecsdl.org" *doi-utils-redirect*)
     (concat *doi-utils-redirect* ".full.pdf")))
 
 
@@ -396,7 +402,7 @@ Argument REDIRECT-URL URL you are redirected to."
 
 (defun rsc-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://pubs.rsc.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://pubs.rsc.org" *doi-utils-redirect*)
     (let ((url (downcase *doi-utils-redirect*)))
       (setq url (replace-regexp-in-string "articlelanding" "articlepdf" url))
       url)))
@@ -452,11 +458,8 @@ REDIRECT-URL is where the pdf url will be in."
 
 (defun science-direct-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match
-         "^http://www.sciencedirect.com"
-         *doi-utils-redirect*)
-    (doi-utils-get-science-direct-pdf-url
-     *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://www.sciencedirect.com" *doi-utils-redirect*)
+    (doi-utils-get-science-direct-pdf-url *doi-utils-redirect*)
     *doi-utils-pdf-url*))
 
 
@@ -485,7 +488,7 @@ REDIRECT-URL is where the pdf url will be in."
 
 (defun pnas-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.pnas.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://www.pnas.org" *doi-utils-redirect*)
     (concat *doi-utils-redirect* ".full.pdf?with-ds=yes")))
 
 
@@ -574,14 +577,14 @@ REDIRECT-URL is where the pdf url will be in."
 ;;** Sage
 (defun sage-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://pss.sagepub.com" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://pss.sagepub.com" *doi-utils-redirect*)
     (concat *doi-utils-redirect* ".full.pdf")))
 
 
 ;;** Journal of Neuroscience
 (defun jneurosci-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://www.jneurosci.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://www.jneurosci.org" *doi-utils-redirect*)
     (concat *doi-utils-redirect* ".full.pdf")))
 
 ;;** Generic .full.pdf
@@ -695,7 +698,7 @@ It is in the citation_pdf_url.
 It would be better to parse this, but here I just use a regexp.
 "
 
-  (when (string-match "^http://biomechanical.asmedigitalcollection.asme.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://biomechanical.asmedigitalcollection.asme.org" *doi-utils-redirect*)
     (setq *doi-utils-waiting* 0)
     (url-retrieve
      *doi-utils-redirect*
@@ -714,7 +717,7 @@ It would be better to parse this, but here I just use a regexp.
 ;; Society for Industrial and Applied Mathematics (SIAM)
 (defun siam-pdf-url (*doi-utils-redirect*)
   "Get url to the pdf from *DOI-UTILS-REDIRECT*."
-  (when (string-match "^http://epubs.siam.org" *doi-utils-redirect*)
+  (when (string-match "^http\\(s?\\)://epubs.siam.org" *doi-utils-redirect*)
     (replace-regexp-in-string "/doi/" "/doi/pdf/" *doi-utils-redirect* )))
 
 
@@ -752,6 +755,7 @@ It would be better to parse this, but here I just use a regexp.
        'osa-pdf-url
        'asme-biomechanical-pdf-url
        'siam-pdf-url
+       'agu-pdf-url
        'generic-full-pdf-url))
 
 ;;** Get the pdf url for a doi
@@ -844,26 +848,35 @@ checked."
 
 (defun doi-utils-get-json-metadata (doi)
   "Try to get json metadata for DOI.  Open the DOI in a browser if we do not get it."
-  (let ((json-object-type 'plist)
-        json-data)
-    (let ((url-proxy-services nil)
+  (let ((url-request-method "GET")
+        (url-proxy-services nil)
           (setenv "ALL_PROXY")
           (setenv "SOCKS_PROXY")
           (setenv "HTTP_PROXY")
           (setenv "HTTPS_PROXY")
-          (url-request-method "GET")
-          (url-mime-accept-string "application/citeproc+json"))
-      (with-current-buffer
-          (url-retrieve-synchronously
-           (concat "http://dx.doi.org/" doi))
-        (setq json-data (buffer-substring url-http-end-of-headers (point-max)))
-        (if (or (string-match "<title>Error: DOI Not Found</title>" json-data)
-                (string-match "Resource not found" json-data)
-                (string-match "Status *406" json-data))
-            (progn
-              (browse-url (concat doi-utils-dx-doi-org-url doi))
-              (error "Resource not found.  Opening website"))
-          (json-read-from-string json-data))))))
+        (url-mime-accept-string "application/citeproc+json")
+        (json-object-type 'plist)
+        (json-data)
+	(url (concat doi-utils-dx-doi-org-url doi)))
+    (with-current-buffer
+        (url-retrieve-synchronously
+         ;; (concat "http://dx.doi.org/" doi)
+	 url)
+      (setq json-data (buffer-substring url-http-end-of-headers (point-max)))
+      (cond
+       ((or (string-match "<title>Error: DOI Not Found</title>" json-data)
+	    (string-match "Resource not found" json-data)
+	    (string-match "Status *406" json-data)
+	    (string-match "400 Bad Request" json-data))
+	(browse-url (concat doi-utils-dx-doi-org-url doi))
+	(error "Something went wrong.  We got this response:
+%s
+
+Opening %s" json-data url))
+
+       ;; everything seems ok with the data
+       (t
+	(json-read-from-string json-data))))))
 
 ;; We can use that data to construct a bibtex entry. We do that by defining a
 ;; template, and filling it in. I wrote this template expansion code which makes
@@ -1114,9 +1127,6 @@ Argument BIBFILE the bibliography to use."
       (if (word-search-forward (concat doi) nil t)
           (message "%s is already in this file" doi)
         (goto-char (point-max))
-	;; make sure we are at the beginning of a line
-	(when (not (= (point) (line-beginning-position)))
-	  (forward-char 1))
 
 	(when (not (looking-back "\n\n" (min 3 (point))))
 	  (insert "\n\n"))

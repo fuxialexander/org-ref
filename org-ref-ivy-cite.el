@@ -39,7 +39,9 @@
 ;; is in the minibuffer. You may like to see something more like a popup though.
 (defcustom org-ref-ivy-display-function nil
   "ivy function to display completion with.
-Set to `ivy-display-function-overlay' to get popups at point")
+Set to `ivy-display-function-overlay' to get popups at point."
+  :type 'function
+  :group 'org-ref)
 
 (when org-ref-ivy-display-function
   (add-to-list 'ivy-display-functions-alist
@@ -219,14 +221,14 @@ This uses a citeproc library."
     (format "%s\n\n" (orhc-formatted-citation entry))))
 
 
-(defun or-ivy-bibtex-insert-formatted-citation (_)
+(defun or-ivy-bibtex-insert-formatted-citation (entry)
   "Insert formatted citations at point for selected entries."
   (with-ivy-window
-   (insert (mapconcat
-	    'identity
-	    (cl-loop for entry in org-ref-ivy-cite-marked-candidates
-		     collect (org-ref-format-bibtex-entry entry))
-	    "\n\n"))))
+    (insert (mapconcat
+	     'identity
+	     (cl-loop for entry in (or org-ref-ivy-cite-marked-candidates (list entry))
+		      collect (org-ref-format-bibtex-entry entry))
+	     "\n\n"))))
 
 
 (defun or-ivy-bibtex-copy-formatted-citation (entry)
@@ -517,14 +519,16 @@ prefix ARG is used, which uses `org-ref-default-bibliography'."
   (interactive)
   (insert
    (concat (if (not (looking-back "label:" 6)) "label:" "")
-	   (ivy-read "label: " (org-ref-get-labels)))))
+	   (ivy-read "label: " (org-ref-get-labels)
+		     :caller 'org-ref-ivy-insert-label-link))))
 
 
 (defun org-ref-ivy-insert-ref-link ()
   "Insert a ref link with ivy.
 Use a prefix arg to select the ref type."
   (interactive)
-  (let ((label (ivy-read "label: " (org-ref-get-labels) :require-match t)))
+  (let ((label (ivy-read "label: " (org-ref-get-labels) :require-match t
+			 :caller 'org-ref-ivy-insert-ref-link)))
     (cond
      ;; from a colon insert
      ((looking-back ":" 1)
