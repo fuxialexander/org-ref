@@ -76,7 +76,6 @@
 (declare-function key-chord-define-global "key-chord")
 (declare-function org-ref-find-bibliography "org-ref-core")
 (declare-function org-ref-open-bibtex-pdf "org-ref-core")
-(declare-function org-ref-open-bibtex-notes "org-ref-core")
 (declare-function org-ref-clean-bibtex-entry "org-ref-core")
 (declare-function org-ref-open-in-browser "org-ref-core")
 (declare-function org-ref-sort-bibtex-entry "org-ref-core")
@@ -422,6 +421,7 @@ This is defined in `org-ref-bibtex-journal-abbreviations'."
 	("ß" . "{\\\\ss}")
 	("≤" . "$\\\\le$")
 	("≥" . "$\\\\ge$")
+	("<" . "$<$")
 	("θ" . "$\\\\theta$")
 	("μ" . "$\\\\mu$")
 	("→" . "$\\\\rightarrow$")
@@ -1142,7 +1142,7 @@ easier to search specifically for them."
   (let ((s (replace-regexp-in-string
 	    "^{\\|}$" ""
 	    (replace-regexp-in-string
-	     "[\n\t\s]+" " "
+	     "[\n\\|\t\\|\s]+" " "
 	     (or (cdr (assoc field entry))
 		 (and (string= field "author")
 		      (cdr (assoc "editor" entry)))
